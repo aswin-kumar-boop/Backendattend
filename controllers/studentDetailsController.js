@@ -169,6 +169,34 @@ exports.getStudentDetails = async (req, res) => {
     }
 };
 
+// Function to count total students
+exports.countTotalStudents = async (req, res) => {
+    try {
+        const count = await StudentDetails.countDocuments();
+        res.json({ totalStudents: count });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+};
+
+// Function to count students by status
+exports.countStudentsByStatus = async (req, res) => {
+    try {
+        const pendingApproval = await StudentDetails.countDocuments({ status: 'pending_approval' });
+        const approved = await StudentDetails.countDocuments({ status: 'approved' });
+        const rejected = await StudentDetails.countDocuments({ status: 'rejected' });
+
+        res.json({
+            pendingApproval,
+            approved,
+            rejected
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+};
+
+
 // PUT: Update a student's details
 exports.updateStudentDetails = async (req, res) => {
     try {

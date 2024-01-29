@@ -27,4 +27,7 @@ router.post('/search',userController.searchUsers);
 // Forgot password
 router.post('/forgot-password', userController.forgotPassword);
 
+// Route to count the total number of users
+router.get('/count', userController.countUsers);
+
 module.exports = router;

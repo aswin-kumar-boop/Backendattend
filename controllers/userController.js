@@ -190,3 +190,12 @@ exports.forgotPassword = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+// Function to count the number of users
+exports.countUsers = async (req, res) => {
+  try {
+    const userCount = await User.countDocuments();
+    res.json({ totalUsers: userCount });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

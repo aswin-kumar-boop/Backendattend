@@ -35,4 +35,7 @@ router.post('/students/approve/:id', studentController.approveStudent);
  // New route for rejecting a student
 router.post('/students/reject/:id', studentController.rejectStudent);  
 
+router.get('/students/count', studentController.countTotalStudents);
+router.get('/students/count/status', studentController.countStudentsByStatus);
+
 module.exports = router;
