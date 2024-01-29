@@ -1,7 +1,7 @@
 // studentDetailsController.js
 
-const StudentDetails = require('../models/studentDetails');
-const NFCData = require('../models/nfcData');
+const StudentDetails = require('../models/StudentDetails');
+const NFCData = require('../models/NFCData');
 const BiometricData = require('../models/biometricData');
 
 // POST: Register a new student with pending approval status

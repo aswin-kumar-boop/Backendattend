@@ -9,6 +9,8 @@ const winston = require('winston'); // Optional, for logging
 const userRoutes = require('./routes/users');
 const studentRoutes = require('./routes/studentRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const timetableRoutes = require('./routes/timetableRoutes');
+
 
 const app = express();
 
@@ -28,6 +30,7 @@ mongoose.connect(process.env.MONGO_URI, {
 app.use('/api/users', userRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/timetable', timetableRoutes); 
 
 // Error handling middleware
 app.use((err, req, res, next) => {
