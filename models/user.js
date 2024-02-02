@@ -19,6 +19,14 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  otp: {
+    type: String,
+    required: false // This field is not always required, only when OTP is generated
+  },
+  otpExpires: {
+    type: Date,
+    required: false // Similarly, this is needed only when OTP is generated
+  }
 },
 {
   timestamps: true // This adds createdAt and updatedAt timestamps automatically

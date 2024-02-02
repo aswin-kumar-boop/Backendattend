@@ -9,29 +9,68 @@ const jwt = require('jsonwebtoken');
 
 const jwtSecret = 'your_jwt_secret'; // Ideally, this should be in an environment variable
 
-// Function to handle user registration
+const sendOtpEmail = (email, otp) => {
+  const transporter = nodemailer.createTransport({
+    service: 'Gmail',
+    auth: {
+      user: 'your_email@gmail.com', // Use your email
+      pass: 'your_email_password' // Use your password
+    }
+  });
+
+  const mailOptions = {
+    from: 'your_email@gmail.com', // Use your email
+    to: email,
+    subject: 'Verify your account',
+    text: `Your verification code is: ${otp}\nThis code expires in 10 minutes.`
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error('Error sending OTP email:', error);
+    } else {
+      console.log('OTP email sent:', info.response);
+    }
+  });
+};
+
+// Modified registration function with OTP
 exports.register = async (req, res) => {
   try {
+    const { username, email, password } = req.body;
+
     // Check if user already exists
-    const existingUser = await User.findOne({ email: req.body.email });
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).send('User already exists');
+      return res.status(400).json({ message: 'User already exists' });
     }
 
     // Hash the password
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create a new user
-    const user = new User({
-      username: req.body.username,
-      email: req.body.email,
-      password: hashedPassword
+    // Generate a 6-digit OTP and set an expiration time
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // OTP expires in 10 minutes
+
+    // Create a new user with OTP fields but do not activate the account yet
+    const newUser = new User({
+      username,
+      email,
+      password: hashedPassword,
+      otp,
+      otpExpires
+      // Add an isActive field set to false if you want to activate the account after OTP verification
     });
 
-    // Save the user
-    const newUser = await user.save();
-    res.status(201).json(newUser);
+    // Save the new user
+    await newUser.save();
+
+    // Send the OTP to the user's email
+    sendOtpEmail(email, otp);
+
+    res.status(201).json({ message: "Registration successful! Please verify your account with the OTP sent to your email." });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: err.message });
   }
 };
