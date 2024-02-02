@@ -143,15 +143,19 @@ exports.submitNFCData = async (req, res) => {
 exports.submitBiometricData = async (req, res) => {
     try {
         const { studentId, template } = req.body;
+        
+        // Hash the biometric template before saving
+        const hashedTemplate = await hashBiometricData(template);
+
         const biometricData = new BiometricData({
             studentId,
-            template
+            template: hashedTemplate // Save the hashed template
         });
 
         const savedBiometricData = await biometricData.save();
-        res.status(201).json(savedBiometricData);
+        res.status(201).json({ message: 'Biometric data submitted successfully', data: savedBiometricData });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({ message: 'Error while hashing biometric data', error: err.message });
     }
 };
 

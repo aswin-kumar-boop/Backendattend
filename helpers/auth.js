@@ -45,8 +45,30 @@ const generateToken = (user) => {
   }
 };
 
+// Hash biometric data
+const hashBiometricData = async (biometricData) => {
+  try {
+    const salt = await bcrypt.genSalt(saltRounds);
+    const hash = await bcrypt.hash(biometricData, salt);
+    return hash;
+  } catch (error) {
+    throw new Error('Error hashing biometric data');
+  }
+};
+
+// Compare biometric data
+const compareBiometricData = async (biometricData, hash) => {
+  try {
+    return await bcrypt.compare(biometricData, hash);
+  } catch (error) {
+    throw new Error('Error comparing biometric data');
+  }
+};
+
 module.exports = {
   hashPassword,
   comparePassword,
-  generateToken
+  generateToken,
+  hashBiometricData,
+  compareBiometricData
 };
