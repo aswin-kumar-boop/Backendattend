@@ -34,11 +34,11 @@ exports.authMiddleware = async (req, res, next) => {
   }
 };
 const checkAuthorization = (req, res, next) => {
-    const userRole = req.user.role; // Assuming req.user is populated from a previous auth middleware
-    if (!['staff', 'admin'].includes(userRole)) {
-      return res.status(403).json({ message: "Unauthorized: You do not have permission to modify attendance records." });
-    }
-    next();
-  };
-  
-  module.exports = { checkAuthorization };
+  const userRole = req.user.role; // Assuming req.user is populated from a previous auth middleware
+  if (!['staff', 'admin'].includes(userRole)) {
+    return res.status(403).json({ message: "Unauthorized: You do not have permission to modify attendance records." });
+  }
+  next();
+};
+
+module.exports = { checkAuthorization };
