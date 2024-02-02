@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const attendanceSchema = new mongoose.Schema({
     studentId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'StudentDetails', // Ensure this matches your student details model
+        ref: 'StudentDetails',
         required: true
     },
     date: {
@@ -17,7 +17,16 @@ const attendanceSchema = new mongoose.Schema({
         isLate: Boolean
     },
     biometricCheckOut: Date,
-    // Additional fields can be added here if necessary
+    // New fields for exceptional circumstances
+    exceptionalCircumstances: {
+        type: Boolean,
+        default: false
+    },
+    exceptionDuration: {
+        type: Number, // Duration in hours
+        default: 0
+    },
+    // You can continue to add additional fields as needed
 }, { timestamps: true });
 
 module.exports = mongoose.model('Attendance', attendanceSchema);

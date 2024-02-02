@@ -14,7 +14,7 @@ const getSessionType = (duration) => duration >= 3 ? 'LAB' : 'LECTURE';
 // Function to record student attendance for a session
 exports.checkIn = async (req, res) => {
   try {
-    const { studentId, nfcTagId, biometricData, currentTime } = req.body;
+    const { studentId, nfcTagId, biometricData, currentTime, exceptionalCircumstances, exceptionDuration } = req.body;
     const timestamp = new Date(currentTime);
 
     // Fetch the student's details
@@ -31,7 +31,7 @@ exports.checkIn = async (req, res) => {
     let isValidNFC = !nfcTagId || await NFCData.exists({ studentId, tagId: nfcTagId });
     let isValidBiometric = !biometricData || await BiometricData.exists({ studentId, template: biometricData });
 
-    if (!isValidNFC || !isValidBiometric) {
+    if (!isValidNFC && !isValidBiometric) { // Ensure both conditions are properly checked
       return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
     }
 
@@ -63,17 +63,24 @@ exports.checkIn = async (req, res) => {
       return res.status(400).json({ message: 'Check-in time is outside the permitted window' });
     }
 
-    // Update or create the attendance record
-    const date = timestamp.setHours(0, 0, 0, 0);
-    const attendanceUpdate = {
-      $push: { checkIns: { time: timestamp, status: status } },
-      $setOnInsert: { studentId: student._id, date: date }
-    };
-    const attendanceOptions = { upsert: true, new: true };
+    // Check for exceptional circumstances
+    let exceptionalDetails = {};
+    if (exceptionalCircumstances) {
+      exceptionalDetails = {
+        exceptionalCircumstances: true,
+        exceptionDuration: exceptionDuration || 1 // Default to 1 hour if not specified
+      };
+    }
+
+    // Update or create the attendance record with exceptional circumstances if applicable
     const attendanceRecord = await Attendance.findOneAndUpdate(
-      { studentId: student._id, date: date },
-      attendanceUpdate,
-      attendanceOptions
+      { studentId: student._id, date: timestamp.setHours(0, 0, 0, 0) },
+      {
+        $push: { checkIns: { time: timestamp, status: status } },
+        $setOnInsert: { studentId: student._id, date: timestamp.setHours(0, 0, 0, 0) },
+        ...exceptionalDetails
+      },
+      { upsert: true, new: true }
     );
 
     res.status(200).json({ message: 'Check-in recorded successfully', data: attendanceRecord });
@@ -82,7 +89,7 @@ exports.checkIn = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
-  
+
 
 // Function to handle student check-out
 exports.checkOut = async (req, res) => {
@@ -187,47 +194,54 @@ async function performPeriodicCheck() {
 
 
 function updateAttendanceForPeriodicCheck(attendanceRecord, currentTimestamp, classSession) {
-    const classStartTime = new Date(classSession.startTime);
-    const classEndTime = new Date(classSession.endTime);
-  
-    // Handle late check-ins
-    const hasLateCheckIn = attendanceRecord.checkIns.some(checkIn => 
-        new Date(checkIn.time) > classStartTime
-    );
-  
-    // Handle early check-outs
-    const hasEarlyCheckOut = attendanceRecord.checkOuts.some(checkOut => 
-        new Date(checkOut.time) < classEndTime
-    );
-  
-    // Handle multiple check-ins
-    if (attendanceRecord.checkIns.length > 1) {
-        const timeFrame = 15 * 60 * 1000; // 15 minutes in milliseconds
-        let isIrregular = false;
-    
-        for (let i = 0; i < attendanceRecord.checkIns.length - 1; i++) {
+  const classStartTime = new Date(classSession.startTime);
+  const classEndTime = new Date(classSession.endTime);
+
+  // Handle late check-ins
+  const hasLateCheckIn = attendanceRecord.checkIns.some(checkIn => 
+      new Date(checkIn.time) > classStartTime
+  );
+
+  // Handle early check-outs
+  const hasEarlyCheckOut = attendanceRecord.checkOuts.some(checkOut => 
+      new Date(checkOut.time) < classEndTime
+  );
+
+  // Handle multiple check-ins
+  if (attendanceRecord.checkIns.length > 1) {
+      const timeFrame = 15 * 60 * 1000; // 15 minutes in milliseconds
+      let isIrregular = false;
+      for (let i = 0; i < attendanceRecord.checkIns.length - 1; i++) {
           const timeDifference = new Date(attendanceRecord.checkIns[i + 1].time) - new Date(attendanceRecord.checkIns[i].time);
           if (timeDifference <= timeFrame) {
-            isIrregular = true;
-            break;
+              isIrregular = true;
+              break;
           }
-        }
-    
-        if (isIrregular) {
-          attendanceRecord.status = 'Irregular';
-        }
       }
-  
-    // Default to 'Present' if no late check-in, no early check-out, and not multiple/irregular check-ins
-    if (!hasLateCheckIn && !hasEarlyCheckOut && attendanceRecord.status !== 'Irregular') {
-        attendanceRecord.status = 'Present';
-    }
-  
-    // Check for absences if no check-in is recorded
-    if (attendanceRecord.checkIns.length === 0 && currentTimestamp > classEndTime) {
-        attendanceRecord.status = 'Absent';
-    }
+      if (isIrregular) {
+          attendanceRecord.status = 'Irregular';
+      }
   }
+
+  // Default to 'Present' if no late check-in, no early check-out, and not multiple/irregular check-ins
+  if (!hasLateCheckIn && !hasEarlyCheckOut && attendanceRecord.status !== 'Irregular') {
+      attendanceRecord.status = 'Present';
+  }
+
+  // Check for absences if no check-in is recorded
+  if (attendanceRecord.checkIns.length === 0 && currentTimestamp > classEndTime) {
+      attendanceRecord.status = 'Absent';
+  }
+
+  // Adjust attendance status based on exceptional circumstances
+  if (attendanceRecord.exceptionalCircumstances && attendanceRecord.exceptionDuration > 0) {
+      // Assuming exceptionDuration is in hours, you might want to convert this to your time logic
+      // For simplification, marking attendance as 'Present' during exceptional circumstances
+      // This is a simplified example. Adjust according to your specific logic and requirements
+      attendanceRecord.status = 'Present';
+  }
+}
+
   
 
 // ... (recordAndMarkAttendance and performPeriodicCheck methods)
