@@ -5,24 +5,24 @@ const classSessionSchema = new mongoose.Schema({
   day: {
     type: String,
     enum: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
-    required: true
+    required: true,
   },
   startTime: {
     type: Date,
-    required: true
+    required: true,
   },
   endTime: {
     type: Date,
-    required: true
+    required: true,
   },
   subject: {
     type: String,
-    required: true
+    required: true,
   },
   sessionType: {
     type: String,
     enum: ['LECTURE', 'LAB'],
-    required: true
+    required: true,
   },
   // ... you can add additional fields as needed, such as instructor, room, etc.
 });
@@ -31,24 +31,31 @@ const classSessionSchema = new mongoose.Schema({
 const timetableSchema = new mongoose.Schema({
   semester: {
     type: Number,
-    required: true
+    required: true,
   },
   year: {
     type: Number,
-    required: true
+    required: true,
   },
   classId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Class', // Assuming you have a Class model
-    required: true
+    required: true,
   },
   sessions: [classSessionSchema], // Array of class sessions
-  // Additional fields can be added as necessary
   instructor: {
     type: String, // Example: Name of the instructor
   },
   room: {
     type: String, // Example: Room number
+  },
+  startDate: {
+    type: Date, // Semester start date
+    required: true,
+  },
+  endDate: {
+    type: Date, // Semester end date
+    required: true,
   },
   // Add any other fields you need for the timetable
 });

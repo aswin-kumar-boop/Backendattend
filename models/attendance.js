@@ -1,32 +1,66 @@
 const mongoose = require('mongoose');
 
+// Define the Attendance schema
 const attendanceSchema = new mongoose.Schema({
-    studentId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'StudentDetails',
-        required: true
-    },
-    date: {
+  studentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StudentDetails', // Reference to the student details model
+    required: true
+  },
+  date: {
+    type: Date,
+    required: true
+  },
+  checkIns: [
+    {
+      time: {
         type: Date,
         required: true
-    },
-    nfcCheckIn: Date,
-    nfcCheckOut: Date,
-    biometricCheckIn: {
-        time: Date,
-        isLate: Boolean
-    },
-    biometricCheckOut: Date,
-    // New fields for exceptional circumstances
-    exceptionalCircumstances: {
-        type: Boolean,
-        default: false
-    },
-    exceptionDuration: {
-        type: Number, // Duration in hours
-        default: 0
-    },
-    // You can continue to add additional fields as needed
-}, { timestamps: true });
+      },
+      status: {
+        type: String,
+        enum: ['OnTime', 'Late', 'VeryLate'],
+        required: true
+      }
+    }
+  ],
+  checkOuts: [
+    {
+      time: {
+        type: Date,
+        required: true
+      },
+      nfcTagId: String, // You can adjust this based on your data
+      biometricData: String, // You can adjust this based on your data
+      classDurationHours: Number // Save class duration in hours
+    }
+  ],
+  absences: [
+    {
+      sessionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Timetable', // Reference to the timetable model
+        required: true
+      },
+      time: {
+        type: Date,
+        required: true
+      }
+    }
+  ],
+  status: {
+    type: String,
+    enum: ['Present', 'Late', 'Absent', 'Irregular'],
+    default: 'Absent' // Default status
+  },
+  exceptionalCircumstances: Boolean,
+  exceptionDuration: {
+    type: Number,
+    default: 1 // Default duration in hours for exceptional circumstances
+  }
+});
 
-module.exports = mongoose.model('Attendance', attendanceSchema);
+// Create the Attendance model
+const Attendance = mongoose.model('Attendance', attendanceSchema);
+
+module.exports = Attendance;

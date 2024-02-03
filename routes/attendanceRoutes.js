@@ -12,13 +12,13 @@ router.post('/attendance/check-in', attendanceController.checkIn);
 router.post('/attendance/check-out', attendanceController.checkOut);
 
 // Get attendance summary
-router.get('/attendance/summary', attendanceController.getAttendanceSummary);
+//router.get('/attendance/summary', attendanceController.getAttendanceSummary);
 
 // Calculate monthly attendance
-router.get('/attendance/monthly', attendanceController.calculateMonthlyAttendance);
+//router.get('/attendance/monthly', attendanceController.calculateMonthlyAttendance);
 
 // Calculate semester attendance
-router.get('/attendance/semester', attendanceController.calculateSemesterAttendance);
+//router.get('/attendance/semester', attendanceController.calculateSemesterAttendance);
 
 
 module.exports = router;

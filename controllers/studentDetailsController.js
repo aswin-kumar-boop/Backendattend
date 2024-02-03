@@ -1,22 +1,84 @@
 const StudentDetails = require('../models/StudentDetails');
 const NFCData = require('../models/NFCData');
 const BiometricData = require('../models/biometricData');
-const { validationResult } = require('express-validator');
+const middleware = require('../helpers/studentmiddleware');
 
-// POST: Register a new student with pending approval status
-exports.registerStudent = async (req, res) => {
+// POST: Create a new student's details
+exports.createOrUpdateStudent = async (req, res) => {
     try {
-        const studentDetails = new StudentDetails({
-            ...req.body,
-            status: 'pending_approval',
-        });
+        let studentDetails;
+        
+        // Check if status is provided in the request body
+        if (req.body.status === 'pending_approval') {
+            studentDetails = new StudentDetails({
+                ...req.body,
+            });
+        } else {
+            studentDetails = new StudentDetails({
+                ...req.body,
+                status: 'pending_approval',
+            });
+        }
 
         const savedDetails = await studentDetails.save();
-        res.status(201).json({ message: 'Registration submitted, pending approval.', data: savedDetails });
+        res.status(201).json({ message: 'Student details saved successfully.', data: savedDetails });
     } catch (err) {
-        res.status(500).json({ message: 'Error during registration', error: err.message });
+        res.status(500).json({ message: 'Error creating/updating student details', error: err.message });
     }
 };
+
+
+// POST: Submit NFC data for a student
+exports.submitNFCData = async (req, res) => {
+    try {
+        const { studentId, nfcTagId } = req.body;
+        const nfcData = new NFCData({
+            studentId,
+            tagId: nfcTagId
+        });
+
+        const savedNFCData = await nfcData.save();
+        // res.status(201).json(savedNFCData);
+        res.status(201).json({ message: 'NFC data submitted successfully', data: savedNFCData });
+    } catch (err) {
+        res.status(500).json({ message: 'Error submitting NFC data', error: err.message });
+    }
+};
+
+// POST: Submit biometric data for a student
+exports.submitBiometricData = async (req, res) => {
+    try {
+        const { studentId, template } = req.body;
+
+        // Hash the biometric template before saving
+        const hashedTemplate = await biometricData(template);
+
+        const biometricData = new BiometricData({
+            studentId,
+            template: hashedTemplate // Save the hashed template
+        });
+
+        const savedBiometricData = await biometricData.save();
+        res.status(201).json({ message: 'Biometric data submitted successfully', data: savedBiometricData });
+    } catch (err) {
+        res.status(500).json({ message: 'Error submitting biometric data', error: err.message });
+    }
+};
+
+// // POST: Register a new student with pending approval status
+// exports.registerStudent = async (req, res) => {
+//     try {
+//         const studentDetails = new StudentDetails({
+//             ...req.body,
+//             status: 'pending_approval',
+//         });
+
+//         const savedDetails = await studentDetails.save();
+//         res.status(201).json({ message: 'Registration submitted, pending approval.', data: savedDetails });
+//     } catch (err) {
+//         res.status(500).json({ message: 'Error during registration', error: err.message });
+//     }
+// };
 
 // POST: Approve a student
 exports.approveStudent = async (req, res) => {
@@ -40,7 +102,7 @@ exports.approveStudent = async (req, res) => {
 
         res.status(200).json({ message: 'Student approved successfully', data: updatedStudent });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({ message: 'Error approving student', error: err.message });
     }
 };
 
@@ -66,96 +128,7 @@ exports.rejectStudent = async (req, res) => {
 
         res.status(200).json({ message: 'Student rejected successfully', data: updatedStudent });
     } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
-
-exports.getPendingApprovalStudents = async (req, res) => {
-    try {
-        const pendingApprovalStudents = await StudentDetails.find({ status: 'pending_approval' });
-        res.json(pendingApprovalStudents);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
-
-exports.rejectAndDeleteStudent = async (req, res) => {
-    try {
-        const studentId = req.params.id;
-
-        // Check if the student exists
-        const student = await StudentDetails.findById(studentId);
-        if (!student) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
-
-        // Check if the student is pending approval (you can customize this check)
-        if (student.status !== 'pending_approval') {
-            return res.status(403).json({ message: 'Student cannot be rejected or deleted' });
-        }
-
-        // Delete student's NFC data (you may add more data deletion if needed)
-        await NFCData.deleteMany({ studentId });
-
-        // Delete student's biometric data (you may add more data deletion if needed)
-        await BiometricData.deleteMany({ studentId });
-
-        // Delete the student details
-        const deletedDetails = await StudentDetails.findByIdAndDelete(studentId);
-        if (!deletedDetails) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
-
-        res.status(204).send();
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
-
-// POST: Create a new student's details
-exports.createStudentDetails = async (req, res) => {
-    try {
-        const studentDetails = new StudentDetails(req.body);
-        const savedDetails = await studentDetails.save();
-        res.status(201).json(savedDetails);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
-
-// POST: Submit NFC data for a student
-exports.submitNFCData = async (req, res) => {
-    try {
-        const { studentId, nfcTagId } = req.body;
-        const nfcData = new NFCData({
-            studentId,
-            tagId: nfcTagId
-        });
-
-        const savedNFCData = await nfcData.save();
-        res.status(201).json(savedNFCData);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
-
-// POST: Submit biometric data for a student
-exports.submitBiometricData = async (req, res) => {
-    try {
-        const { studentId, template } = req.body;
-
-        // Hash the biometric template before saving
-        const hashedTemplate = await biometricData(template);
-
-        const biometricData = new BiometricData({
-            studentId,
-            template: hashedTemplate // Save the hashed template
-        });
-
-        const savedBiometricData = await biometricData.save();
-        res.status(201).json({ message: 'Biometric data submitted successfully', data: savedBiometricData });
-    } catch (err) {
-        res.status(500).json({ message: 'Error while hashing biometric data', error: err.message });
+        res.status(500).json({ message: 'Error rejecting student', error: err.message });
     }
 };
 
@@ -169,9 +142,35 @@ exports.getStudentDetails = async (req, res) => {
         }
         res.json(details);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({ message: 'Error retrieving student details', error: err.message });
     }
 };
+
+// DELETE: Delete a student's details (with middleware checks)
+exports.deleteStudentDetails = async (req, res) => {
+    try {
+        const student = req.student; // Student object attached by middleware
+
+        // Check if the student is pending approval (using middleware)
+        if (student.status !== 'pending_approval') {
+            return res.status(403).json({ message: 'Student cannot be rejected or deleted' });
+        }
+
+        // Delete student's NFC and biometric data (using middleware)
+        await middleware.deleteStudentData(req, res, async () => {
+            // Middleware will handle data deletion, continue with student deletion
+            const deletedDetails = await StudentDetails.findByIdAndDelete(student._id);
+            if (!deletedDetails) {
+                return res.status(404).json({ message: 'Student not found' });
+            }
+            res.status(204).send();
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error deleting student details', error: err.message });
+    }
+};
+
+// ... (other controller functions)
 
 // Function to count total students
 exports.countTotalStudents = async (req, res) => {
@@ -179,24 +178,25 @@ exports.countTotalStudents = async (req, res) => {
         const count = await StudentDetails.countDocuments();
         res.json({ totalStudents: count });
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({ message: 'Error counting total students', error: err.message });
     }
 };
 
 // Function to count students by status
 exports.countStudentsByStatus = async (req, res) => {
     try {
-        const pendingApproval = await StudentDetails.countDocuments({ status: 'pending_approval' });
-        const approved = await StudentDetails.countDocuments({ status: 'approved' });
-        const rejected = await StudentDetails.countDocuments({ status: 'rejected' });
+        const statusCounts = await StudentDetails.aggregate([
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+        ]);
 
-        res.json({
-            pendingApproval,
-            approved,
-            rejected
+        const counts = {};
+        statusCounts.forEach((statusCount) => {
+            counts[statusCount._id] = statusCount.count;
         });
+
+        res.json(counts);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({ message: 'Error counting students by status', error: err.message });
     }
 };
 
@@ -210,21 +210,7 @@ exports.updateStudentDetails = async (req, res) => {
         }
         res.json(updatedDetails);
     } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
-
-// DELETE: Delete a student's details
-exports.deleteStudentDetails = async (req, res) => {
-    try {
-        const studentId = req.params.id;
-        const deletedDetails = await StudentDetails.findByIdAndDelete(studentId);
-        if (!deletedDetails) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
-        res.status(204).send();
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({ message: 'Error updating student details', error: err.message });
     }
 };
 
@@ -234,6 +220,6 @@ exports.getAllStudentDetails = async (req, res) => {
         const details = await StudentDetails.find();
         res.json(details);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(500).json({ message: 'Error retrieving all students details', error: err.message });
     }
 };

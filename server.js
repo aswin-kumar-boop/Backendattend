@@ -10,12 +10,14 @@ const userRoutes = require('./routes/users');
 const studentRoutes = require('./routes/studentRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const timetableRoutes = require('./routes/timetableRoutes');
+const apiRoutes = require('./routes/api');
 
 
 const app = express();
 
 // Middleware setup
 app.use(cors());
+app.use('/api', apiRoutes);
 app.use(bodyParser.json());
 
 // MongoDB Connection
