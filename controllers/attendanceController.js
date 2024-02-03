@@ -29,7 +29,7 @@ exports.checkIn = async (req, res) => {
 
     // Validate NFC or biometric data
     let isValidNFC = !nfcTagId || await NFCData.exists({ studentId, tagId: nfcTagId });
-    let isValidBiometric = await bcrypt.compare(req.body.biometricData, user.template);
+    let isValidBiometric = await bcrypt.compare(req.body.biometricData, BiometricData.template);
 
     if (!isValidNFC && !isValidBiometric) { // Ensure both conditions are properly checked
       return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
@@ -109,7 +109,7 @@ exports.checkOut = async (req, res) => {
   
       // Authenticate using NFC and/or biometric data here
       let isValidNFC = !nfcTagId || await NFCData.exists({ studentId, tagId: nfcTagId });
-      let isValidBiometric = !biometricData || await BiometricData.exists({ studentId, template: biometricData });
+       let isValidBiometric = await bcrypt.compare(req.body.biometricData, BiometricData.template);
   
       if (!isValidNFC || !isValidBiometric) {
         return res.status(401).json({ message: 'NFC or biometric authentication failed' });
@@ -283,13 +283,13 @@ exports.getAttendanceSummary = async (req, res) => {
           as: "studentInfo"
         }},
         // Optional: Format the output
-        { $project: {
-          totalClasses: 1,
-          presentCount: 1,
-          lateCount: 1,
-          absentCount: 1,
-          studentInfo: { $arrayElemAt: ["$studentInfo", 0] }, // Extract the first student from the array
-        }}
+        // { $project: {
+        //   totalClasses: 1,
+        //   presentCount: 1,
+        //   lateCount: 1,
+        //   absentCount: 1,
+        //   studentInfo: { $arrayElemAt: ["$studentInfo", 0] }, // Extract the first student from the array
+        // }}
       ]);
   
       // Send the response
