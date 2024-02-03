@@ -29,7 +29,7 @@ exports.checkIn = async (req, res) => {
 
     // Validate NFC or biometric data
     let isValidNFC = !nfcTagId || await NFCData.exists({ studentId, tagId: nfcTagId });
-    let isValidBiometric = !biometricData || await BiometricData.exists({ studentId, template: biometricData });
+    let isValidBiometric = await bcrypt.compare(req.body.biometricData, user.template);
 
     if (!isValidNFC && !isValidBiometric) { // Ensure both conditions are properly checked
       return res.status(400).json({ message: 'Invalid NFC or Biometric data' });

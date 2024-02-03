@@ -1,8 +1,7 @@
-// studentDetailsController.js
-
 const StudentDetails = require('../models/StudentDetails');
 const NFCData = require('../models/NFCData');
 const BiometricData = require('../models/biometricData');
+const { validationResult } = require('express-validator');
 
 // POST: Register a new student with pending approval status
 exports.registerStudent = async (req, res) => {
@@ -112,6 +111,7 @@ exports.rejectAndDeleteStudent = async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 };
+
 // POST: Create a new student's details
 exports.createStudentDetails = async (req, res) => {
     try {
@@ -143,9 +143,9 @@ exports.submitNFCData = async (req, res) => {
 exports.submitBiometricData = async (req, res) => {
     try {
         const { studentId, template } = req.body;
-        
+
         // Hash the biometric template before saving
-        const hashedTemplate = await hashBiometricData(template);
+        const hashedTemplate = await biometricData(template);
 
         const biometricData = new BiometricData({
             studentId,
@@ -200,7 +200,6 @@ exports.countStudentsByStatus = async (req, res) => {
     }
 };
 
-
 // PUT: Update a student's details
 exports.updateStudentDetails = async (req, res) => {
     try {
@@ -238,15 +237,3 @@ exports.getAllStudentDetails = async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 };
-
-// Exporting all the functions
-// module.exports = {
-//     registerStudent,
-//     createStudentDetails,
-//     submitNFCData,
-//     submitBiometricData,
-//     getStudentDetails,
-//     updateStudentDetails,
-//     deleteStudentDetails,
-//     getAllStudentDetails
-// };
