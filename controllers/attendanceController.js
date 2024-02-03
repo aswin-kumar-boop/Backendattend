@@ -6,6 +6,7 @@ const BiometricData = require('../models/biometricData');
 const Attendance = require('../models/Attendance');
 const Timetable = require('../models/Timetable');
 const globalSettings = require('../config/globalSettings');
+const { validationResult } = require('express-validator');
 
 
 // Utility function to determine if a session is a lecture or lab
