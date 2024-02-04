@@ -93,6 +93,7 @@ exports.checkIn = async (req, res) => {
 };
 
 // Function to handle student check-out
+// Function to handle student check-out
 exports.checkOut = async (req, res) => {
   try {
     const { studentId, currentTime, nfcTagId, biometricData } = req.body;
@@ -103,7 +104,6 @@ exports.checkOut = async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    // Check if the student is approved
     if (student.status !== 'approved') {
       return res.status(403).json({ message: 'Student not approved for check-out' });
     }
@@ -124,24 +124,38 @@ exports.checkOut = async (req, res) => {
       return res.status(400).json({ message: 'No check-in record found for this student on this date' });
     }
 
-    // Ensure that we don't record a check-out before a check-in
     if (attendanceRecord.checkIns.length === 0) {
       return res.status(400).json({ message: 'Cannot check out before checking in' });
     }
 
-    // Record the check-out time
+    // Determine the minimum checkout time (example uses class duration or a fixed time after class starts)
+    // Find the session linked to the check-in
+    const currentSession = await Timetable.findOne({
+      _id: attendanceRecord.checkIns[0].sessionId // Assuming sessionId is stored in checkIns
+    });
+    if (!currentSession) {
+      return res.status(400).json({ message: 'No class session found for check-in' });
+    }
+
+    const sessionStartTime = new Date(currentSession.startTime);
+    // Set a minimum checkout time (e.g., class duration + start time or fixed minimum duration)
+    const minimumDuration = 1; // Minimum duration in hours after class start
+    const minimumCheckoutTime = new Date(sessionStartTime.getTime() + minimumDuration * 60 * 60 * 1000);
+
+    if (timestamp < minimumCheckoutTime) {
+      return res.status(400).json({ message: `Checkout time is too early. Minimum checkout time is ${minimumCheckoutTime.toISOString()}.` });
+    }
+
+    // Proceed to record the check-out time
     const checkoutTime = timestamp;
     attendanceRecord.checkOuts.push({ time: checkoutTime, nfcTagId, biometricData });
 
-    // Calculate the duration of attendance
-    const checkInTime = attendanceRecord.checkIns[0].time; // Assuming only one check-in for simplicity
-    const durationInMilliseconds = checkoutTime - checkInTime;
+    const durationInMilliseconds = checkoutTime - attendanceRecord.checkIns[0].time;
     const durationInMinutes = Math.floor(durationInMilliseconds / (1000 * 60));
-    const durationInHours  = durationInMinutes /60;
-    // Save the calculated duration in the attendance record
+    const durationInHours = durationInMinutes / 60;
     attendanceRecord.classDurationHours = durationInHours;
 
-    const savedAttendance = await attendanceRecord.save();
+    await attendanceRecord.save();
     res.status(200).json({ message: 'Check-out recorded successfully', attendanceRecord });
 
   } catch (err) {
@@ -149,6 +163,7 @@ exports.checkOut = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
 
 // Function to perform periodic checks and update attendance records
 async function performPeriodicCheck() {

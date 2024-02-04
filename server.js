@@ -14,6 +14,7 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 const timetableRoutes = require('./routes/timetableRoutes');
 const apiRoutes = require('./routes/api');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const settingsRouter = require('./routes/settings'); // Adjust the path as necessary
 
 
 const app = express();
@@ -28,6 +29,7 @@ const io = socketIo(server, {
 // Middleware setup
 app.use(cors());
 app.use('/api', apiRoutes);
+app.use(settingsRouter);
 app.use(bodyParser.json());
 
 // MongoDB Connection
@@ -43,6 +45,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/timetable', timetableRoutes); 
+app.use(express.json());
 
 // Socket.IO for real-time updates
 io.on('connection', (socket) => {
