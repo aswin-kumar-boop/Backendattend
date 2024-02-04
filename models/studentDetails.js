@@ -28,13 +28,17 @@ const studentDetailsSchema = new mongoose.Schema({
   },
   currentSemester: {
     type: String,
-    required: false // Set to true if this field is mandatory
+    required: false // Adjust based on whether this field is mandatory
   },
-  // Additional status field to track the approval state of the student
   status: {
     type: String,
     enum: ['pending_approval', 'approved', 'rejected'],
     default: 'pending_approval'
+  },
+  // Field to store the URL or path to the student's photo
+  photoUrl: {
+    type: String,
+    required: false // Set to true if you require a photo for each student
   },
   // You can add more fields as needed
 }, { timestamps: true });

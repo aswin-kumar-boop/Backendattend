@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const winston = require('winston'); // Optional, for logging
+const http = require('http');
+const socketIo = require('socket.io');
 
 // Importing routes
 const userRoutes = require('./routes/users');
@@ -11,9 +13,17 @@ const studentRoutes = require('./routes/studentRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const timetableRoutes = require('./routes/timetableRoutes');
 const apiRoutes = require('./routes/api');
+const analyticsRoutes = require('./routes/analyticsRoutes');
 
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: "*", // Adjust this to match your front-end URL for security
+    methods: ["GET", "POST", "PUT"],
+  },
+});
 
 // Middleware setup
 app.use(cors());
@@ -34,14 +44,39 @@ app.use('/api/students', studentRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/timetable', timetableRoutes); 
 
+// Socket.IO for real-time updates
+io.on('connection', (socket) => {
+  console.log('A user connected');
+
+  socket.on('joinRoom', (roomId) => {
+    socket.join(roomId);
+    console.log(`A user joined room: ${roomId}`);
+  });
+
+  socket.on('leaveRoom', (roomId) => {
+    socket.leave(roomId);
+    console.log(`A user left room: ${roomId}`);
+  });
+
+  socket.on('updateAttendance', (data) => {
+    // Validate and process the data here
+    // Then, broadcast the update to all clients in the room
+    io.to(data.roomId).emit('attendanceUpdated', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: 'Something broke!', error: err.message });
 });
 
-// Start the server
+// Start the server with Socket.IO
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

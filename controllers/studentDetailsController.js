@@ -2,30 +2,57 @@ const StudentDetails = require('../models/StudentDetails');
 const NFCData = require('../models/NFCData');
 const BiometricData = require('../models/biometricData');
 const middleware = require('../helpers/studentmiddleware');
+const upload = require('../helpers/uploadMiddleware').single('photo'); // Adjust the path as necessary
+
 
 // POST: Create a new student's details
-exports.createOrUpdateStudent = async (req, res) => {
-    try {
-        let studentDetails;
-        
-        // Check if status is provided in the request body
-        if (req.body.status === 'pending_approval') {
-            studentDetails = new StudentDetails({
-                ...req.body,
-            });
-        } else {
-            studentDetails = new StudentDetails({
-                ...req.body,
-                status: 'pending_approval',
-            });
+exports.createOrUpdateStudent = (req, res) => {
+    upload(req, res, async (err) => {
+      if (err) {
+        // Handle file upload error
+        return res.status(500).json({ message: 'Error uploading file', error: err.message });
+      }
+  
+      // Proceed with validating required fields and updating/creating student details
+      try {
+        // Validate required fields
+        const requiredFields = ['name', 'email', 'course', 'year'];
+        const missingFields = requiredFields.filter(field => !req.body[field]);
+  
+        if (missingFields.length > 0) {
+            return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
         }
-
-        const savedDetails = await studentDetails.save();
-        res.status(201).json({ message: 'Student details saved successfully.', data: savedDetails });
-    } catch (err) {
+  
+        // Extract fields from request body
+        const { studentId, name, email, course, year, section, academicLevel, currentSemester, status } = req.body;
+        
+        // Build the update object, including the photo URL if available
+        let updateObject = {
+          name,
+          email,
+          course,
+          year,
+          section,
+          academicLevel,
+          currentSemester,
+          status: status || 'pending_approval',
+        };
+  
+        if (req.file) {
+          updateObject.photoUrl = req.file.path; // Include photo URL if file was uploaded
+        }
+  
+        // Update or create student details in the database
+        let studentDetails = await StudentDetails.findOneAndUpdate({ studentId }, updateObject, { new: true, upsert: true, runValidators: true });
+  
+        res.status(201).json({ message: 'Student details saved successfully.', data: studentDetails });
+      } catch (err) {
+        // Handle other errors
         res.status(500).json({ message: 'Error creating/updating student details', error: err.message });
-    }
-};
+      }
+    });
+  };
+
 
 
 // POST: Submit NFC data for a student
