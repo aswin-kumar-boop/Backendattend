@@ -92,7 +92,7 @@ exports.checkIn = async (req, res) => {
   }
 };
 
-// Function to handle student check-out
+
 // Function to handle student check-out
 exports.checkOut = async (req, res) => {
   try {
@@ -128,19 +128,17 @@ exports.checkOut = async (req, res) => {
       return res.status(400).json({ message: 'Cannot check out before checking in' });
     }
 
-    // Determine the minimum checkout time (example uses class duration or a fixed time after class starts)
-    // Find the session linked to the check-in
+    // Determine the minimum checkout time
     const currentSession = await Timetable.findOne({
-      _id: attendanceRecord.checkIns[0].sessionId // Assuming sessionId is stored in checkIns
+      _id: attendanceRecord.checkIns[0].sessionId
     });
     if (!currentSession) {
       return res.status(400).json({ message: 'No class session found for check-in' });
     }
 
     const sessionStartTime = new Date(currentSession.startTime);
-    // Set a minimum checkout time (e.g., class duration + start time or fixed minimum duration)
-    const minimumDuration = 1; // Minimum duration in hours after class start
-    const minimumCheckoutTime = new Date(sessionStartTime.getTime() + minimumDuration * 60 * 60 * 1000);
+    const minimumDuration = globalSettings.attendance.minimumSessionDurationMinutes; // Minimum duration in minutes
+    const minimumCheckoutTime = new Date(sessionStartTime.getTime() + minimumDuration * 60 * 1000);
 
     if (timestamp < minimumCheckoutTime) {
       return res.status(400).json({ message: `Checkout time is too early. Minimum checkout time is ${minimumCheckoutTime.toISOString()}.` });
