@@ -1,28 +1,42 @@
+require('dotenv').config();
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
-const User = require('../models/user'); // Import your User model
-const https = require('https');
-const fs = require('fs');
-
+const User = require('../models/user'); // Adjust the path according to your project structure
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
+const StudentDetails = require('../models/StudentDetails');
 
-const jwtSecret = 'your_jwt_secret'; // Ideally, this should be in an environment variable
+// Environment variables
+const jwtSecret = process.env.JWT_SECRET;
+const emailUser = process.env.EMAIL_USER;
+const emailPass = process.env.EMAIL_PASS;
+const emailClientId = process.env.EMAIL_CLIENT_ID;
+const emailClientSecret = process.env.EMAIL_CLIENT_SECRET;
+const emailRefreshToken = process.env.EMAIL_REFRESH_TOKEN;
+const emailService = process.env.EMAIL_SERVICE; // For example, 'Gmail'
+const clientURL = process.env.CLIENT_URL; // Ensure this is HTTPS in production
+const saltRounds = parseInt(process.env.SALT_ROUNDS) || 10;
 
+// Email transport configuration using OAuth2 for Gmail
+const transporter = nodemailer.createTransport({
+  service: emailService,
+  auth: {
+    type: 'OAuth2',
+    user: emailUser,
+    clientId: emailClientId,
+    clientSecret: emailClientSecret,
+    refreshToken: emailRefreshToken,
+  },
+});
+
+// Function to send OTP email
 const sendOtpEmail = (email, otp) => {
-  const transporter = nodemailer.createTransport({
-    service: 'Gmail',
-    auth: {
-      user: 'your_email@gmail.com', // Use your email
-      pass: 'your_email_password' // Use your password
-    }
-  });
-
   const mailOptions = {
-    from: 'your_email@gmail.com', // Use your email
+    from: emailUser,
     to: email,
     subject: 'Verify your account',
-    text: `Your verification code is: ${otp}\nThis code expires in 10 minutes.`
+    text: `Your verification code is: ${otp}\nThis code expires in 10 minutes.`,
   };
 
   transporter.sendMail(mailOptions, (error, info) => {
@@ -34,70 +48,94 @@ const sendOtpEmail = (email, otp) => {
   });
 };
 
-// Modified registration function with OTP
+// Registration function with OTP
+// Updated Registration Function with OTP
 exports.register = async (req, res) => {
   try {
     const { username, email, password } = req.body;
-
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ message: 'User already exists.' });
     }
 
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Generate a 6-digit OTP and set an expiration time
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // OTP expires in 10 minutes
-
-    // Create a new user with OTP fields but do not activate the account yet
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
     const newUser = new User({
       username,
       email,
       password: hashedPassword,
-      otp,
-      otpExpires
-      // Add an isActive field set to false if you want to activate the account after OTP verification
+      // No need to manually set otp and otpExpires here
     });
 
-    // Save the new user
-    await newUser.save();
-
-    // Send the OTP to the user's email
-    sendOtpEmail(email, otp);
+    const otp = newUser.generateOtp(); // Utilize the generateOtp method
+    await newUser.save(); // Save after generating the OTP to ensure otp and otpExpires are stored
+    sendOtpEmail(email, otp); // This function remains unchanged, ensure it's implemented correctly
 
     res.status(201).json({ message: "Registration successful! Please verify your account with the OTP sent to your email." });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: 'Error during registration.' });
   }
 };
 
-// Function to handle user login
+// OTP Verification Function
+exports.verifyOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const user = await User.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired OTP." });
+    }
+
+    user.isActive = true;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    await user.save();
+    res.status(200).json({ message: "Account verified successfully." });
+  } catch (err) {
+    res.status(500).json({ message: 'Error verifying OTP.' });
+  }
+};
+
+// Login function
 exports.login = async (req, res) => {
   try {
-    // Find the user by email
-    const user = await User.findOne({ email: req.body.email });
-    if (!user) {
-      return res.status(401).send('Authentication failed. User not found.');
+    const user = await User.findOne({ email: req.body.email }).select('+password');
+    if (!user || !user.isActive) {
+      return res.status(401).json({ message: 'Authentication failed. User not found or account not activated.' });
     }
 
-    // Check if the password is correct
     const isMatch = await bcrypt.compare(req.body.password, user.password);
     if (!isMatch) {
-      return res.status(401).send('Authentication failed. Wrong password.');
+      return res.status(401).json({ message: 'Authentication failed. Wrong password.' });
     }
 
-    // Generate a token
-    const token = jwt.sign({ userId: user._id }, jwtSecret, { expiresIn: '1h' });
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-    // Send the token to the client
-    res.json({ token: token });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+        // Optionally, fetch additional details if the user is a student
+        let StudentDetails = {};
+        if (user.role === 'student') {
+            StudentDetails = await StudentDetails.findOne({ student: user._id });
+        }
+
+        res.json({
+            token,
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                // Include any additional details you want in the navbar here
+                StudentDetails,
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error during login.', error: err.message });
+    }
 };
 
 // Function to get all users
@@ -171,64 +209,35 @@ exports.searchUsers = async (req, res) => {
   }
 };
 
-// Function to handle forgot password
+// Forgot Password Function - Utilize the generatePasswordResetToken method
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-
-    // Generate a reset token
-    const resetToken = crypto.randomBytes(20).toString('hex');
-
-    // Find the user by email
     const user = await User.findOne({ email });
-
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Set the reset token and expiration time in the user document
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = Date.now() + 3600000; // Token expires in 1 hour
+    const token = user.generatePasswordResetToken(); // Utilize the new method
+    await user.save(); // Save the user document to store the reset token and its expiration
 
-    await user.save();
+    // Update to use HTTPS in production for the clientURL
+    const resetUrl = `${clientURL}/reset-password/${token}`;
 
-    // Create a reusable transporter object using nodemailer
-    const transporter = nodemailer.createTransport({
-      service: 'Gmail', // Change to your email service (e.g., Gmail, Outlook)
-      auth: {
-        user: 'ashwinkumarka52@gmail.com', // Your email address
-        pass: 'Aashwinkumarka808650@' // Your email password
-      },
-      tls: {
-        rejectUnauthorized: false // Allow self-signed certificates for development
-      }
+    // Assuming sendEmail is a function you've implemented to handle email sending
+    await sendEmail({
+      to: user.email,
+      subject: 'Password Reset Request',
+      text: `To reset your password, please click on the following link: ${resetUrl}`
     });
 
-    // Email body with the reset link
-    const mailOptions = {
-      from: 'your.email@gmail.com',
-      to: email,
-      subject: 'Password Reset',
-      text: `You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\n`
-        + `Please click on the following link, or paste this into your browser to complete the process:\n\n`
-        + `http://localhost:3000/reset/${resetToken}\n\n`
-        + `If you did not request this, please ignore this email, and your password will remain unchanged.\n`
-    };
-
-    // Send the email
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.log(error);
-        return res.status(500).json({ message: 'Error sending email' });
-      } else {
-        console.log('Email sent: ' + info.response);
-        return res.status(200).json({ message: 'Password reset email sent' });
-      }
-    });
+    res.status(200).json({ message: 'Password reset email sent.' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error(err);
+    res.status(500).json({ message: 'Error sending password reset email.' });
   }
 };
+
 // Function to count the number of users
 exports.countUsers = async (req, res) => {
   try {

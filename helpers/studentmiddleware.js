@@ -2,6 +2,11 @@ const StudentDetails = require('../models/StudentDetails');
 const NFCData = require('../models/NFCData');
 const BiometricData = require('../models/biometricData');
 
+
+const jwt = require('jsonwebtoken');
+
+
+
 // Middleware to check if a student exists by ID
 exports.checkStudentExistence = async (req, res, next) => {
     try {

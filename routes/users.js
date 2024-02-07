@@ -1,33 +1,34 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
-//const authMiddleware = require('../middleware/authMiddleware');
 
-// Register a new user
+// Route for user registration
 router.post('/register', userController.register);
 
-// Login user
+// Route for user login
 router.post('/login', userController.login);
 
-// Get all users (protected route)
-router.get('/', userController.getAllUsers);
+// Route for OTP verification
+router.post('/verify-otp', userController.verifyOtp);
 
-// Get a single user by ID (protected route)
-router.get('/:id', userController.getUserById);
+// Route to get all users (demonstrating a protected route, assuming you have middleware for authentication)
+// Assuming you have an authentication middleware set up
+const { authenticateToken } = require('../helpers/auth'); // Adjust path as necessary
+router.get('/users', authenticateToken, userController.getAllUsers);
 
-// Update a user by ID (protected route)
-router.put('/:id', userController.updateUser);
+// Route to get a single user by ID
+router.get('/users/:id', authenticateToken, userController.getUserById);
 
-// Delete a user by ID (protected route)
-router.delete('/:id', userController.deleteUser);
+// Route to update a user by ID
+router.put('/users/:id', authenticateToken, userController.updateUser);
 
-// Search for users by username or email (protected route)
-router.post('/search',userController.searchUsers);
+// Route to delete a user by ID
+router.delete('/users/:id', authenticateToken, userController.deleteUser);
 
-// Forgot password
+// Route for users to initiate a password reset
 router.post('/forgot-password', userController.forgotPassword);
 
-// Route to count the total number of users
-router.get('/count', userController.countUsers);
+// Route for searching users by username or email
+router.get('/search', authenticateToken, userController.searchUsers);
 
 module.exports = router;

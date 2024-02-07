@@ -4,54 +4,54 @@ const BiometricData = require('../models/biometricData');
 const middleware = require('../helpers/studentmiddleware');
 const upload = require('../helpers/uploadMiddleware').single('photo'); // Adjust the path as necessary
 
-
-// POST: Create a new student's details
+// POST: Create or update a student's details
 exports.createOrUpdateStudent = (req, res) => {
     upload(req, res, async (err) => {
-      if (err) {
-        // Handle file upload error
-        return res.status(500).json({ message: 'Error uploading file', error: err.message });
-      }
-  
-      // Proceed with validating required fields and updating/creating student details
-      try {
+        if (err) {
+            return res.status(500).json({ message: 'Error uploading file', error: err.message });
+        }
+
+        // Extract fields from request body
+        const { studentId, name, email, course, year, section, academicLevel, currentSemester, status } = req.body;
+
         // Validate required fields
         const requiredFields = ['name', 'email', 'course', 'year'];
         const missingFields = requiredFields.filter(field => !req.body[field]);
-  
+
         if (missingFields.length > 0) {
             return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
         }
-  
-        // Extract fields from request body
-        const { studentId, name, email, course, year, section, academicLevel, currentSemester, status } = req.body;
-        
-        // Build the update object, including the photo URL if available
-        let updateObject = {
-          name,
-          email,
-          course,
-          year,
-          section,
-          academicLevel,
-          currentSemester,
-          status: status || 'pending_approval',
-        };
-  
-        if (req.file) {
-          updateObject.photoUrl = req.file.path; // Include photo URL if file was uploaded
+
+        try {
+            // Ensure the user is a student
+            const student = await User.findById(studentId);
+            if (!student || student.role !== 'student') {
+                return res.status(400).json({ message: 'Invalid student ID or not a student.' });
+            }
+            
+            // Build the update/create object
+            const updateObject = {
+                name,
+                email,
+                course,
+                year,
+                section,
+                academicLevel,
+                currentSemester,
+                status: status || 'pending_approval',
+                ...(req.file && { photoUrl: req.file.path }) // Conditionally add photoUrl if file was uploaded
+            };
+
+            // Update or create student details in the database
+            const studentDetails = await StudentDetails.findOneAndUpdate({ studentId }, updateObject, { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true });
+
+            res.status(201).json({ message: 'Student details saved successfully.', data: studentDetails });
+        } catch (error) {
+            res.status(500).json({ message: 'Error submitting student details.', error: error.message });
         }
-  
-        // Update or create student details in the database
-        let studentDetails = await StudentDetails.findOneAndUpdate({ studentId }, updateObject, { new: true, upsert: true, runValidators: true });
-  
-        res.status(201).json({ message: 'Student details saved successfully.', data: studentDetails });
-      } catch (err) {
-        // Handle other errors
-        res.status(500).json({ message: 'Error creating/updating student details', error: err.message });
-      }
     });
-  };
+};
+
 
 
 
