@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const { authenticateToken } = require('../helpers/auth'); // Adjust path as necessary
 
 // Route for user registration
 router.post('/register', userController.register);
@@ -13,7 +14,7 @@ router.post('/verify-otp', userController.verifyOtp);
 
 // Route to get all users (demonstrating a protected route, assuming you have middleware for authentication)
 // Assuming you have an authentication middleware set up
-const { authenticateToken } = require('../helpers/auth'); // Adjust path as necessary
+
 router.get('/users', authenticateToken, userController.getAllUsers);
 
 // Route to get a single user by ID
