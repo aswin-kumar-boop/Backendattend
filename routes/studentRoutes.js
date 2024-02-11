@@ -50,10 +50,10 @@ router.get('/students', studentController.getAllStudentDetails);
 //router.post('/students/:id/reject', middleware.checkStudentExistence, studentController.rejectAndDeleteStudent);
 
 // New route for approving a student
-router.post('/students/approve/:id', middleware.checkStudentExistence, studentController.approveStudent);
+router.post('/students/approve/:id',studentController.approveStudent);
 
 // New route for rejecting a student
-router.post('/students/reject/:id', middleware.checkStudentExistence, studentController.rejectStudent);
+router.post('/students/reject/:id', studentController.rejectStudent);
 
 router.get('/students/count', studentController.countTotalStudents);
 router.get('/students/count/status', studentController.countStudentsByStatus);

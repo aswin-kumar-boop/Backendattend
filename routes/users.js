@@ -13,8 +13,6 @@ router.post('/login', userController.login);
 router.post('/verify-otp', userController.verifyOtp);
 
 // Route to get all users (demonstrating a protected route, assuming you have middleware for authentication)
-// Assuming you have an authentication middleware set up
-
 router.get('/users', authenticateToken, userController.getAllUsers);
 
 // Route to get a single user by ID
@@ -31,5 +29,8 @@ router.post('/forgot-password', userController.forgotPassword);
 
 // Route for searching users by username or email
 router.get('/search', authenticateToken, userController.searchUsers);
+
+// Route to count the number of users - New route added
+router.get('/count',authenticateToken, userController.countUsers);
 
 module.exports = router;

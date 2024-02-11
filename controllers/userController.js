@@ -52,7 +52,7 @@ const sendOtpEmail = (email, otp) => {
 // Updated Registration Function with OTP
 exports.register = async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, role } = req.body;
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists.' });
@@ -63,6 +63,7 @@ exports.register = async (req, res) => {
       username,
       email,
       password: hashedPassword,
+      role,
       // No need to manually set otp and otpExpires here
     });
 
@@ -116,27 +117,28 @@ exports.login = async (req, res) => {
 
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-        // Optionally, fetch additional details if the user is a student
-        let StudentDetails = {};
-        if (user.role === 'student') {
-            StudentDetails = await StudentDetails.findOne({ student: user._id });
-        }
-
-        res.json({
-            token,
-            user: {
-                id: user._id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
-                // Include any additional details you want in the navbar here
-                StudentDetails,
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ message: 'Error during login.', error: err.message });
+    // Optionally, fetch additional details if the user is a student
+    let studentDetailsData = {}; // Renamed variable
+    if (user.role === 'student') {
+        studentDetailsData = await StudentDetails.findOne({ student: user._id }); // Correct usage of the StudentDetails model
     }
+
+    res.json({
+        token,
+        user: {
+            id: user._id,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+            // Include any additional details you want in the navbar here
+            studentDetails: studentDetailsData, // Correctly renamed to avoid shadowing the model
+        }
+    });
+  } catch (err) {
+      res.status(500).json({ message: 'Error during login.', error: err.message });
+  }
 };
+
 
 // Function to get all users
 exports.getAllUsers = async (req, res) => {
