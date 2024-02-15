@@ -12,6 +12,9 @@ router.post('/login', userController.login);
 // Route for OTP verification
 router.post('/verify-otp', userController.verifyOtp);
 
+// Route for Rengerate OTP verification
+router.post('/regenerate-otp', userController.regenerateotp);
+
 // Route to get all users (demonstrating a protected route, assuming you have middleware for authentication)
 router.get('/users', authenticateToken, userController.getAllUsers);
 

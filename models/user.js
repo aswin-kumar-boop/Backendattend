@@ -21,10 +21,15 @@ const userSchema = new Schema({
         required: true
     },
     role: { 
-      type: String,
-       required: false,
-        enum: ['student', 'faculty','admin'] },
+        type: String,
+        required: false,
+        enum: ['student', 'faculty', 'admin']
+    },
     isActive: {
+        type: Boolean,
+        default: false
+    },
+    isVerified: {
         type: Boolean,
         default: false
     },
@@ -54,7 +59,7 @@ userSchema.methods.generateOtp = function() {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   this.otp = otp;
   // Set OTP to expire after 10 minutes
-  this.otpExpires = Date.now() + 10*60*1000;
+  this.otpExpires = new Date(new Date().getTime() + 10*60000);
 
   return otp;
 };
@@ -72,7 +77,6 @@ userSchema.methods.generatePasswordResetToken = function() {
 
   return resetToken;
 };
-
 
 const User = mongoose.model('User', userSchema);
 

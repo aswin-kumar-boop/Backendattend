@@ -31,19 +31,19 @@ const transporter = nodemailer.createTransport({
 });
 
 // Function to send OTP email
-const sendOtpEmail = (email, otp) => {
+const sendEmail = (email, subject, text) => {
   const mailOptions = {
     from: emailUser,
     to: email,
-    subject: "Verify your account",
-    text: `Your verification code is: ${otp}\nThis code expires in 10 minutes.`,
+    subject: subject,
+    text: text,
   };
 
   transporter.sendMail(mailOptions, (error, info) => {
     if (error) {
-      console.error("Error sending OTP email:", error);
+      console.error("Error sending email:", error);
     } else {
-      console.log("OTP email sent:", info.response);
+      console.log("Email sent:", info.response);
     }
   });
 };
@@ -53,9 +53,26 @@ const sendOtpEmail = (email, otp) => {
 exports.register = async (req, res) => {
   try {
     const { username, email, password, role } = req.body;
-    const existingUser = await User.findOne({ email });
+
+    // Check if the username already exists
+    let existingUser = await User.findOne({ username });
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists." });
+      return res.status(400).json({ message: "Username already exists." });
+    }
+
+    existingUser = await User.findOne({ email });
+    if (existingUser) {
+      if (!existingUser.isVerified) {
+        const otp = existingUser.generateOtp();
+        await existingUser.save();
+        sendEmail(email, "Verify your account", `Your verification code is: ${otp}\nThis code expires in 10 minutes.`);
+        return res.status(201).json({
+          success: true,
+          message: "Registration successful! Please verify your account with the OTP sent to your email.",
+        });
+      } else {
+        return res.status(400).json({ message: "User already exists." });
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, saltRounds);
@@ -64,24 +81,39 @@ exports.register = async (req, res) => {
       email,
       password: hashedPassword,
       role,
-      // No need to manually set otp and otpExpires here
+      isVerified: false,
     });
 
-    const otp = newUser.generateOtp(); // Utilize the generateOtp method
-    await newUser.save(); // Save after generating the OTP to ensure otp and otpExpires are stored
-    sendOtpEmail(email, otp); // This function remains unchanged, ensure it's implemented correctly
+    const otp = newUser.generateOtp();
+    await newUser.save();
+    sendEmail(email, "Verify your account", `Your verification code is: ${otp}\nThis code expires in 10 minutes.`);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message:
-        "Registration successful! Please verify your account with the OTP sent to your email.",
+      message: "Registration successful! Please verify your account with the OTP sent to your email.",
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Error during registration." });
+    return res.status(500).json({ message: "Error during registration." });
   }
 };
 
+async function generateStudentId() {
+  let unique = false;
+  let studentId;
+  while (!unique) {
+    const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase(); // Generate a random string
+    const timestampPart = Date.now().toString().slice(-6); // Get the last 6 digits of the current timestamp
+    studentId = `CT${timestampPart}${randomPart}`; // Combine them to form the ID
+
+    // Check if this ID already exists in the database
+    const existingId = await StudentDetails.findOne({ studentId });
+    if (!existingId) {
+      unique = true; // If the ID doesn't exist, break out of the loop
+    }
+  }
+  return studentId;
+}
 // OTP Verification Function
 exports.verifyOtp = async (req, res) => {
   try {
@@ -95,8 +127,12 @@ exports.verifyOtp = async (req, res) => {
     if (!user) {
       return res.status(400).json({ message: "Invalid or expired OTP." });
     }
+   
+    const isOtpValid = user.otp === otp && user.otpExpires.getTime() > Date.now();
+     if (!isOtpValid) return res.status(400).json({ message: 'Invalid or expired OTP' });
 
     user.isActive = true;
+    user.isVerified = true;
     user.otp = undefined;
     user.otpExpires = undefined;
     await user.save();
@@ -105,6 +141,30 @@ exports.verifyOtp = async (req, res) => {
     res.status(500).json({ message: "Error verifying OTP." });
   }
 };
+
+// Endpoint to regenerate OTP
+exports.regenerateotp = async (req, res) => {
+  const { email } = req.body;
+  try {
+    let user = await User.findOne({ email });
+    if (!user) return res.status(404).send('User not found');
+
+    // Check if the user has already verified the account to prevent OTP resend after verification
+    if (user.isActive) return res.status(400).send('Account already verified. OTP regeneration not allowed.');
+
+    const otp = user.generateOtp();
+    await user.save();
+
+    // Resend OTP email
+    sendEmail(email, "Verify your account", `Your verification code is: ${otp}\nThis code expires in 10 minutes.`);
+
+    res.send('A new OTP has been generated and sent to your email.');
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Server error');
+  }
+};
+
 
 // Login function
 exports.login = async (req, res) => {
