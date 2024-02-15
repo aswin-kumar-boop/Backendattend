@@ -1,11 +1,11 @@
-require('dotenv').config();
-const nodemailer = require('nodemailer');
-const bcrypt = require('bcrypt');
-const crypto = require('crypto');
-const User = require('../models/user'); // Adjust the path according to your project structure
-const jwt = require('jsonwebtoken');
-const { OAuth2Client } = require('google-auth-library');
-const StudentDetails = require('../models/StudentDetails');
+require("dotenv").config();
+const nodemailer = require("nodemailer");
+const bcrypt = require("bcrypt");
+const crypto = require("crypto");
+const User = require("../models/user"); // Adjust the path according to your project structure
+const jwt = require("jsonwebtoken");
+const { OAuth2Client } = require("google-auth-library");
+const StudentDetails = require("../models/StudentDetails");
 
 // Environment variables
 const jwtSecret = process.env.JWT_SECRET;
@@ -22,7 +22,7 @@ const saltRounds = parseInt(process.env.SALT_ROUNDS) || 10;
 const transporter = nodemailer.createTransport({
   service: emailService,
   auth: {
-    type: 'OAuth2',
+    type: "OAuth2",
     user: emailUser,
     clientId: emailClientId,
     clientSecret: emailClientSecret,
@@ -35,15 +35,15 @@ const sendOtpEmail = (email, otp) => {
   const mailOptions = {
     from: emailUser,
     to: email,
-    subject: 'Verify your account',
+    subject: "Verify your account",
     text: `Your verification code is: ${otp}\nThis code expires in 10 minutes.`,
   };
 
   transporter.sendMail(mailOptions, (error, info) => {
     if (error) {
-      console.error('Error sending OTP email:', error);
+      console.error("Error sending OTP email:", error);
     } else {
-      console.log('OTP email sent:', info.response);
+      console.log("OTP email sent:", info.response);
     }
   });
 };
@@ -55,7 +55,7 @@ exports.register = async (req, res) => {
     const { username, email, password, role } = req.body;
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists.' });
+      return res.status(400).json({ message: "User already exists." });
     }
 
     const hashedPassword = await bcrypt.hash(password, saltRounds);
@@ -71,10 +71,14 @@ exports.register = async (req, res) => {
     await newUser.save(); // Save after generating the OTP to ensure otp and otpExpires are stored
     sendOtpEmail(email, otp); // This function remains unchanged, ensure it's implemented correctly
 
-    res.status(201).json({ message: "Registration successful! Please verify your account with the OTP sent to your email." });
+    res.status(201).json({
+      success: true,
+      message:
+        "Registration successful! Please verify your account with the OTP sent to your email.",
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Error during registration.' });
+    res.status(500).json({ message: "Error during registration." });
   }
 };
 
@@ -98,47 +102,57 @@ exports.verifyOtp = async (req, res) => {
     await user.save();
     res.status(200).json({ message: "Account verified successfully." });
   } catch (err) {
-    res.status(500).json({ message: 'Error verifying OTP.' });
+    res.status(500).json({ message: "Error verifying OTP." });
   }
 };
 
 // Login function
 exports.login = async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email }).select('+password');
+    const user = await User.findOne({ email: req.body.email }).select(
+      "+password"
+    );
     if (!user || !user.isActive) {
-      return res.status(401).json({ message: 'Authentication failed. User not found or account not activated.' });
+      return res.status(401).json({
+        message:
+          "Authentication failed. User not found or account not activated.",
+      });
     }
 
     const isMatch = await bcrypt.compare(req.body.password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Authentication failed. Wrong password.' });
+      return res
+        .status(401)
+        .json({ message: "Authentication failed. Wrong password." });
     }
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "1h",
+    });
 
     // Optionally, fetch additional details if the user is a student
     let studentDetailsData = {}; // Renamed variable
-    if (user.role === 'student') {
-        studentDetailsData = await StudentDetails.findOne({ student: user._id }); // Correct usage of the StudentDetails model
+    if (user.role === "student") {
+      studentDetailsData = await StudentDetails.findOne({ student: user._id }); // Correct usage of the StudentDetails model
     }
 
     res.json({
-        token,
-        user: {
-            id: user._id,
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            // Include any additional details you want in the navbar here
-            studentDetails: studentDetailsData, // Correctly renamed to avoid shadowing the model
-        }
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        // Include any additional details you want in the navbar here
+        studentDetails: studentDetailsData, // Correctly renamed to avoid shadowing the model
+      },
     });
   } catch (err) {
-      res.status(500).json({ message: 'Error during login.', error: err.message });
+    res
+      .status(500)
+      .json({ message: "Error during login.", error: err.message });
   }
 };
-
 
 // Function to get all users
 exports.getAllUsers = async (req, res) => {
@@ -156,7 +170,7 @@ exports.getUserById = async (req, res) => {
     const userId = req.params.id;
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
     res.json(user);
   } catch (err) {
@@ -168,9 +182,11 @@ exports.getUserById = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const userId = req.params.id;
-    const updatedUser = await User.findByIdAndUpdate(userId, req.body, { new: true });
+    const updatedUser = await User.findByIdAndUpdate(userId, req.body, {
+      new: true,
+    });
     if (!updatedUser) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
     res.json(updatedUser);
   } catch (err) {
@@ -184,7 +200,7 @@ exports.deleteUser = async (req, res) => {
     const userId = req.params.id;
     const deletedUser = await User.findByIdAndDelete(userId);
     if (!deletedUser) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
     res.status(204).send(); // Respond with a 204 status (No Content) for successful deletion
   } catch (err) {
@@ -200,9 +216,9 @@ exports.searchUsers = async (req, res) => {
     // Use regex to perform a case-insensitive search
     const users = await User.find({
       $or: [
-        { username: { $regex: searchPattern, $options: 'i' } },
-        { email: { $regex: searchPattern, $options: 'i' } }
-      ]
+        { username: { $regex: searchPattern, $options: "i" } },
+        { email: { $regex: searchPattern, $options: "i" } },
+      ],
     });
 
     res.json(users);
@@ -217,7 +233,7 @@ exports.forgotPassword = async (req, res) => {
     const { email } = req.body;
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
 
     const token = user.generatePasswordResetToken(); // Utilize the new method
@@ -229,14 +245,14 @@ exports.forgotPassword = async (req, res) => {
     // Assuming sendEmail is a function you've implemented to handle email sending
     await sendEmail({
       to: user.email,
-      subject: 'Password Reset Request',
-      text: `To reset your password, please click on the following link: ${resetUrl}`
+      subject: "Password Reset Request",
+      text: `To reset your password, please click on the following link: ${resetUrl}`,
     });
 
-    res.status(200).json({ message: 'Password reset email sent.' });
+    res.status(200).json({ message: "Password reset email sent." });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Error sending password reset email.' });
+    res.status(500).json({ message: "Error sending password reset email." });
   }
 };
 
