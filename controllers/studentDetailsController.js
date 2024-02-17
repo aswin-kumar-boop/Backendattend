@@ -5,46 +5,51 @@ const middleware = require('../helpers/studentmiddleware');
 const User = require('../models/user'); // Adjust the path according to your project structure
 //const upload = require('../helpers/uploadMiddleware').single('photo'); // Adjust the path as necessary
 
-// POST: Create or update a student's details
-exports.createOrUpdateStudent = async (req, res) => {
-    try {
-        // Extract fields from request body
-        const { studentId, name, email, course, year, section, academicLevel, currentSemester, status } = req.body;
-
-        // Validate required fields
-        const requiredFields = ['name', 'email', 'course', 'year'];
-        const missingFields = requiredFields.filter(field => !req.body[field]);
-
-        if (missingFields.length > 0) {
-            return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
-        }
-
-        // Ensure the user is a student
-        const student = await User.findById(studentId);
-        if (!student || student.role !== 'student') {
-            return res.status(400).json({ message: 'Invalid student ID or not a student.' });
-        }
-        
-        // Build the update/create object
-        const updateObject = {
-            name,
-            email,
-            course,
-            year,
-            section,
-            academicLevel,
-            currentSemester,
-            status: status || 'pending_approval'
-        };
-
-        // Update or create student details in the database
-        const studentDetails = await StudentDetails.findOneAndUpdate({ studentId }, updateObject, { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true });
-
-        res.status(201).json({ message: 'Student details saved successfully.', data: studentDetails });
-    } catch (error) {
-        res.status(500).json({ message: 'Error submitting student details.', error: error.message });
+// Function to update student details
+exports.updateStudentDetails = async (req, res) => {
+    const userId = req.user.userId; // Assuming req.user is populated from your authentication middleware
+    const { name, course, year, section, academicLevel, currentSemester } = req.body;
+  
+    // Validate input data (example: check if required fields are provided)
+    if (!name || !course || !year || !section || !academicLevel) {
+      return res.status(400).json({ message: "Missing required fields." });
     }
-};
+  
+    try {
+      // Attempt to find the StudentDetails document linked to the user
+      const studentDetails = await StudentDetails.findByIdAndUpdate({ user: userId });
+  
+      if (!studentDetails) {
+        return res.status(404).json({ message: "Student details not found for the given user." });
+      }
+  
+      // If found, update the student details
+      studentDetails.name = name;
+      studentDetails.course = course;
+      studentDetails.year = year;
+      studentDetails.section = section;
+      studentDetails.academicLevel = academicLevel;
+      studentDetails.currentSemester = currentSemester || studentDetails.currentSemester; // Example of optional field
+  
+      await studentDetails.save();
+
+      res.json({
+        message: "Student details updated successfully",
+        data: studentDetails,
+      });
+    } catch (err) {
+      // Log the error for server monitoring
+      console.error("Failed to update student details:", err);
+  
+      // Handle specific error types here if needed
+      if (err.name === 'ValidationError') {
+        return res.status(400).json({ message: "Validation error: " + err.message });
+      }
+  
+      // Fallback error message
+      res.status(500).json({ message: "An unexpected error occurred while updating student details." });
+    }
+  };
 
 
 // POST: Submit NFC data for a student

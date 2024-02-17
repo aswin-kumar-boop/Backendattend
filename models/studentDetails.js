@@ -8,28 +8,28 @@ const studentDetailsSchema = new mongoose.Schema({
     },
   studentId: {
     type: String,
-    required: true,
+    required: false,
     unique: true
   },
   name: {
     type: String,
-    required: true
+    required: false
   },
   course: {
     type: String,
-    required: true
+    required: false
   },
   year: {
     type: Number,
-    required: true
+    required: false
   },
   section: {
     type: String,
-    required: true
+    required: false
   },
   academicLevel: {
     type: String,
-    required: true
+    required: false
   },
   currentSemester: {
     type: String,

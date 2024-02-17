@@ -52,29 +52,34 @@ const sendEmail = (email, subject, text) => {
 // Updated Registration Function with OTP
 exports.register = async (req, res) => {
   try {
-    const { username, email, password, role } = req.body;
+    const { username, email, password, confirmPassword, role } = req.body;
 
-    // Check if the username already exists
-    let existingUser = await User.findOne({ username });
-    if (existingUser) {
-      return res.status(400).json({ message: "Username already exists." });
+    // Validate confirmation password
+    if (password !== confirmPassword) {
+      return res.status(400).json({ message: "Passwords do not match." });
     }
 
-    existingUser = await User.findOne({ email });
+    // Check if the user already exists by username or email
+    const existingUser = await User.findOne({
+      $or: [{ username }, { email }],
+    });
+
     if (existingUser) {
+      // Handle the case where the user exists but is not verified
       if (!existingUser.isVerified) {
         const otp = existingUser.generateOtp();
         await existingUser.save();
         sendEmail(email, "Verify your account", `Your verification code is: ${otp}\nThis code expires in 10 minutes.`);
         return res.status(201).json({
           success: true,
-          message: "Registration successful! Please verify your account with the OTP sent to your email.",
+          message: "User already registered. Please verify your account with the OTP sent to your email.",
         });
-      } else {
-        return res.status(400).json({ message: "User already exists." });
       }
+      // Handle the case where the user is already verified
+      return res.status(400).json({ message: "User already exists." });
     }
 
+    // Proceed with new user registration
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     const newUser = new User({
       username,
@@ -97,6 +102,7 @@ exports.register = async (req, res) => {
     return res.status(500).json({ message: "Error during registration." });
   }
 };
+
 
 async function generateStudentId() {
   let unique = false;
@@ -130,12 +136,36 @@ exports.verifyOtp = async (req, res) => {
    
     const isOtpValid = user.otp === otp && user.otpExpires.getTime() > Date.now();
      if (!isOtpValid) return res.status(400).json({ message: 'Invalid or expired OTP' });
+    
+    // Generate unique studentId
+    const studentId = await generateStudentId(); // This function was previously defined
+
+    // Create StudentDetails document
+    const studentDetails = new StudentDetails({
+      user: user._id,
+      studentId,
+      // Set default or empty values for other fields as necessary
+      name: "", // Example: These fields should be updated by the user later
+      course: "",
+      year: 0,
+      section: "",
+      academicLevel: "",
+      currentSemester:"",
+      status:'pending_approval',
+      // Add any additional fields as needed
+    });
+
+    await studentDetails.save();
 
     user.isActive = true;
     user.isVerified = true;
     user.otp = undefined;
     user.otpExpires = undefined;
     await user.save();
+
+     // Send studentId via email
+     sendEmail(email, "Your Student ID", `Your unique student ID is: ${studentId}`);
+
     res.status(200).json({ message: "Account verified successfully." });
   } catch (err) {
     res.status(500).json({ message: "Error verifying OTP." });
@@ -169,33 +199,33 @@ exports.regenerateotp = async (req, res) => {
 // Login function
 exports.login = async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email }).select(
-      "+password"
-    );
+    const user = await User.findOne({ email: req.body.email }).select("+password");
     if (!user || !user.isActive) {
       return res.status(401).json({
-        message:
-          "Authentication failed. User not found or account not activated.",
+        message: "Authentication failed. User not found or account not activated.",
       });
     }
 
     const isMatch = await bcrypt.compare(req.body.password, user.password);
     if (!isMatch) {
-      return res
-        .status(401)
-        .json({ message: "Authentication failed. Wrong password." });
+      return res.status(401).json({ message: "Authentication failed. Wrong password." });
     }
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1h",
-    });
+    const token = jwt.sign({ userId: user._id }, jwtSecret, { expiresIn: "1h" });
 
-    // Optionally, fetch additional details if the user is a student
-    let studentDetailsData = {}; // Renamed variable
+    // Initialize an empty object for studentDetails
+    let studentDetailsData = null;
+
+    // Fetch additional details if the user is a student
     if (user.role === "student") {
-      studentDetailsData = await StudentDetails.findOne({ student: user._id }); // Correct usage of the StudentDetails model
+      studentDetailsData = await StudentDetails.findOne({ user: user._id });
+      // Check if student details are not found
+      if (!studentDetailsData) {
+        return res.status(404).json({ message: "Student details not found." });
+      }
     }
 
+    // Return the token and user details
     res.json({
       token,
       user: {
@@ -203,14 +233,12 @@ exports.login = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
-        // Include any additional details you want in the navbar here
-        studentDetails: studentDetailsData, // Correctly renamed to avoid shadowing the model
+        studentDetails: studentDetailsData, // Include the student details
       },
     });
   } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Error during login.", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "Error during login.", error: err.message });
   }
 };
 

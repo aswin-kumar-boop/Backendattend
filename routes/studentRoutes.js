@@ -6,14 +6,13 @@ const middleware = require('../helpers/studentmiddleware');
 
 // POST: Create a new student's details
 router.post(
-    '/students',
+    '/update-details/:id',
     [
         // Validate request body (you can add more validation as needed)
-        body('name').notEmpty().withMessage('Name is required'),
-        body('email').isEmail().withMessage('Invalid email'),
+        body('name').notEmpty().withMessage('Name is required')
         // Add more validation rules here
     ],
-    studentController.createOrUpdateStudent
+      studentController.updateStudentDetails
 );
 
 // POST: Submit NFC data for a student
