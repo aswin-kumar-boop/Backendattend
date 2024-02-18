@@ -3,6 +3,7 @@ const NFCData = require('../models/NFCData');
 const BiometricData = require('../models/biometricData');
 const middleware = require('../helpers/studentmiddleware');
 const User = require('../models/user'); // Adjust the path according to your project structure
+const { sendEmail } = require('../helpers/emailHelper');
 //const upload = require('../helpers/uploadMiddleware').single('photo'); // Adjust the path as necessary
 
 // Function to update student details
@@ -53,41 +54,66 @@ exports.updateStudentDetails = async (req, res) => {
 
 
 // POST: Submit NFC data for a student
-exports.submitNFCData = async (req, res) => {
+// Function to update NFC data for a student
+exports.updateNFCData = async (req, res) => {
     try {
-        const { studentId, nfcTagId } = req.body;
-        const nfcData = new NFCData({
-            studentId,
-            tagId: nfcTagId
-        });
-
-        const savedNFCData = await nfcData.save();
-        // res.status(201).json(savedNFCData);
-        res.status(201).json({ message: 'NFC data submitted successfully', data: savedNFCData });
+      const { studentId, tagId } = req.body; // Assume tagId is the new NFC data
+  
+      // Find the StudentDetails document to get the ObjectId
+      const studentDetails = await StudentDetails.findOne({ studentId });
+      if (!studentDetails) {
+        return res.status(404).json({ message: "Student details not found." });
+      }
+  
+      // Update the NFCData document with the new tagId
+      const updatedNFCData = await NFCData.findOneAndUpdate(
+        { studentob_Id: studentDetails._id },
+        { tagId },
+        { new: true }
+      );
+  
+      if (!updatedNFCData) {
+        return res.status(404).json({ message: "NFC data not found for the given student." });
+      }
+  
+      res.json({ message: "NFC data updated successfully", data: updatedNFCData });
     } catch (err) {
-        res.status(500).json({ message: 'Error submitting NFC data', error: err.message });
+      console.error("Error updating NFC data:", err);
+      res.status(500).json({ message: "Error updating NFC data." });
     }
-};
+  };
+  
 
 // POST: Submit biometric data for a student
-exports.submitBiometricData = async (req, res) => {
+// Function to update Biometric data for a student
+exports.updateBiometricData = async (req, res) => {
     try {
-        const { studentId, template } = req.body;
-
-        // Hash the biometric template before saving
-        const hashedTemplate = await biometricData(template);
-
-        const biometricData = new BiometricData({
-            studentId,
-            template: hashedTemplate // Save the hashed template
-        });
-
-        const savedBiometricData = await biometricData.save();
-        res.status(201).json({ message: 'Biometric data submitted successfully', data: savedBiometricData });
+      const { studentId, template } = req.body; // Assume template is the new biometric data
+  
+      // Find the StudentDetails document to get the ObjectId
+      const studentDetails = await StudentDetails.findOne({ studentId });
+      if (!studentDetails) {
+        return res.status(404).json({ message: "Student details not found." });
+      }
+  
+      // Update the BiometricData document with the new template
+      const updatedBiometricData = await BiometricData.findOneAndUpdate(
+        { studentob_Id: studentDetails._id },
+        { template },
+        { new: true }
+      );
+  
+      if (!updatedBiometricData) {
+        return res.status(404).json({ message: "Biometric data not found for the given student." });
+      }
+  
+      res.json({ message: "Biometric data updated successfully", data: updatedBiometricData });
     } catch (err) {
-        res.status(500).json({ message: 'Error submitting biometric data', error: err.message });
+      console.error("Error updating Biometric data:", err);
+      res.status(500).json({ message: "Error updating Biometric data." });
     }
-};
+  };
+  
 
 // // POST: Register a new student with pending approval status
 // exports.registerStudent = async (req, res) => {
@@ -132,6 +158,11 @@ exports.approveStudent = async (req, res) => {
         if (!updatedStudent) {
             return res.status(404).json({ message: 'Student not found' });
         }
+        // Send an email notification to the student
+        const user = await User.findById(student.user);
+        if (user) {
+        sendEmail(user.email, "Student Approval", "Your student account has been approved.");
+    }
 
         res.status(200).json({ message: 'Student approved successfully', data: updatedStudent });
     } catch (err) {
@@ -168,6 +199,11 @@ exports.rejectStudent = async (req, res) => {
         if (!updatedStudent) {
             return res.status(404).json({ message: 'Student not found' });
         }
+        // Send an email notification to the student
+       const user = await User.findByIdAndUpdate(student.user);
+       if (user) {
+       sendEmail(user.email, "Student Rejection", "Your student account has been rejected.");
+    }
 
         res.status(200).json({ message: 'Student rejected successfully', data: updatedStudent });
     } catch (err) {
@@ -206,8 +242,8 @@ exports.rejectStudent = async (req, res) => {
 // GET: Retrieve a student's details by ID
 exports.getStudentDetails = async (req, res) => {
     try {
-        const studentId = req.params.id;
-        const details = await StudentDetails.findById(studentId);
+        const { id } = req.params;
+        const details = await StudentDetails.findById(id);
         if (!details) {
             return res.status(404).json({ message: 'Student not found' });
         }
@@ -217,15 +253,16 @@ exports.getStudentDetails = async (req, res) => {
     }
 };
 
+
 // DELETE: Delete a student's details (with middleware checks)
 exports.deleteStudentDetails = async (req, res) => {
     try {
         const student = req.student; // Student object attached by middleware
 
         // Check if the student is pending approval (using middleware)
-        if (student.status !== 'pending_approval') {
-            return res.status(403).json({ message: 'Student cannot be rejected or deleted' });
-        }
+        // if (student.status !== 'pending_approval') {
+        //     return res.status(403).json({ message: 'Student cannot be rejected or deleted' });
+        // }
 
         // Delete student's NFC and biometric data (using middleware)
         await middleware.deleteStudentData(req, res, async () => {
@@ -241,17 +278,17 @@ exports.deleteStudentDetails = async (req, res) => {
     }
 };
 
-// ... (other controller functions)
-
-// Function to count total students
+// Function to count the total number of students
 exports.countTotalStudents = async (req, res) => {
     try {
-        const count = await StudentDetails.countDocuments();
-        res.json({ totalStudents: count });
+        const totalStudents = await StudentDetails.countDocuments(); // This will count all student records
+        res.json({ total: totalStudents });
     } catch (err) {
-        res.status(500).json({ message: 'Error counting total students', error: err.message });
+        console.error("Error counting total students:", err);
+        res.status(500).json({ message: "Error counting total students", error: err.message });
     }
 };
+
 
 // Function to count students by status
 exports.countStudentsByStatus = async (req, res) => {

@@ -1,14 +1,19 @@
 const mongoose = require('mongoose');
 
 const biometricDataSchema = new mongoose.Schema({
-  studentId: {
+  studentob_Id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'StudentDetails',
     required: true
   },
+  studentId: {
+    type: String,
+    required: false,
+    unique: true
+  },
   template: {
     type: String, // The type will depend on how you're encoding/storing the biometric data
-    required: true,
+    required: false,
     unique: true // Biometric data should be unique to each student
   },
   // Include additional fields as needed

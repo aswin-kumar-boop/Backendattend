@@ -16,10 +16,10 @@ router.post(
 );
 
 // POST: Submit NFC data for a student
-router.post('/students/nfc', studentController.submitNFCData);
+router.post('/students/nfc', studentController.updateNFCData);
 
 // POST: Submit biometric data for a student
-router.post('/students/biometric', studentController.submitBiometricData);
+router.post('/students/biometric', studentController.updateBiometricData);
 
 // GET: Retrieve a student's details by ID
 router.get('/students/:id', studentController.getStudentDetails);
@@ -54,7 +54,8 @@ router.post('/students/approve/:id',studentController.approveStudent);
 // New route for rejecting a student
 router.post('/students/reject/:id', studentController.rejectStudent);
 
-router.get('/students/count', studentController.countTotalStudents);
+router.get('/countTotalStudents', studentController.countTotalStudents);
+
 router.get('/students/count/status', studentController.countStudentsByStatus);
 
 module.exports = router;

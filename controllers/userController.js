@@ -4,49 +4,53 @@ const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const User = require("../models/user"); // Adjust the path according to your project structure
 const jwt = require("jsonwebtoken");
-const { OAuth2Client } = require("google-auth-library");
+//const { OAuth2Client } = require("google-auth-library");
 const StudentDetails = require("../models/StudentDetails");
+const { sendEmail } = require('../helpers/emailHelper');
+const NFCData = require('../models/NFCData');
+const BiometricData = require('../models/biometricData');
 
-// Environment variables
-const jwtSecret = process.env.JWT_SECRET;
-const emailUser = process.env.EMAIL_USER;
-const emailPass = process.env.EMAIL_PASS;
-const emailClientId = process.env.EMAIL_CLIENT_ID;
-const emailClientSecret = process.env.EMAIL_CLIENT_SECRET;
-const emailRefreshToken = process.env.EMAIL_REFRESH_TOKEN;
-const emailService = process.env.EMAIL_SERVICE; // For example, 'Gmail'
-const clientURL = process.env.CLIENT_URL; // Ensure this is HTTPS in production
-const saltRounds = parseInt(process.env.SALT_ROUNDS) || 10;
 
-// Email transport configuration using OAuth2 for Gmail
-const transporter = nodemailer.createTransport({
-  service: emailService,
-  auth: {
-    type: "OAuth2",
-    user: emailUser,
-    clientId: emailClientId,
-    clientSecret: emailClientSecret,
-    refreshToken: emailRefreshToken,
-  },
-});
+// // Environment variables
+ const jwtSecret = process.env.JWT_SECRET;
+// const emailUser = process.env.EMAIL_USER;
+// const emailPass = process.env.EMAIL_PASS;
+// const emailClientId = process.env.EMAIL_CLIENT_ID;
+// const emailClientSecret = process.env.EMAIL_CLIENT_SECRET;
+// const emailRefreshToken = process.env.EMAIL_REFRESH_TOKEN;
+// const emailService = process.env.EMAIL_SERVICE; // For example, 'Gmail'
+ const clientURL = process.env.CLIENT_URL; // Ensure this is HTTPS in production
+ const saltRounds = parseInt(process.env.SALT_ROUNDS) || 10;
 
-// Function to send OTP email
-const sendEmail = (email, subject, text) => {
-  const mailOptions = {
-    from: emailUser,
-    to: email,
-    subject: subject,
-    text: text,
-  };
+// // Email transport configuration using OAuth2 for Gmail
+// const transporter = nodemailer.createTransport({
+//   service: emailService,
+//   auth: {
+//     type: "OAuth2",
+//     user: emailUser,
+//     clientId: emailClientId,
+//     clientSecret: emailClientSecret,
+//     refreshToken: emailRefreshToken,
+//   },
+// });
 
-  transporter.sendMail(mailOptions, (error, info) => {
-    if (error) {
-      console.error("Error sending email:", error);
-    } else {
-      console.log("Email sent:", info.response);
-    }
-  });
-};
+// // Function to send OTP email
+// const sendEmail = (email, subject, text) => {
+//   const mailOptions = {
+//     from: emailUser,
+//     to: email,
+//     subject: subject,
+//     text: text,
+//   };
+
+//   transporter.sendMail(mailOptions, (error, info) => {
+//     if (error) {
+//       console.error("Error sending email:", error);
+//     } else {
+//       console.log("Email sent:", info.response);
+//     }
+//   });
+// };
 
 // Registration function with OTP
 // Updated Registration Function with OTP
@@ -134,28 +138,40 @@ exports.verifyOtp = async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired OTP." });
     }
    
-    const isOtpValid = user.otp === otp && user.otpExpires.getTime() > Date.now();
-     if (!isOtpValid) return res.status(400).json({ message: 'Invalid or expired OTP' });
+    if (!(user.otp === otp && user.otpExpires.getTime() > Date.now())) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
     
-    // Generate unique studentId
-    const studentId = await generateStudentId(); // This function was previously defined
+    const studentId = await generateStudentId();
 
-    // Create StudentDetails document
-    const studentDetails = new StudentDetails({
+    const studentDetails = await new StudentDetails({
       user: user._id,
       studentId,
-      // Set default or empty values for other fields as necessary
-      name: "", // Example: These fields should be updated by the user later
+      name: "",
       course: "",
       year: 0,
       section: "",
       academicLevel: "",
-      currentSemester:"",
-      status:'pending_approval',
-      // Add any additional fields as needed
+      currentSemester: "",
+      status: 'pending_approval',
+    }).save();
+
+    // Note: Fixed variable name for MongoDB ObjectId reference to match your schema
+    const nfcDataInstance = new NFCData({
+      studentob_Id: studentDetails._id, // Correctly reference the saved StudentDetails document
+      studentId: studentId,
+      tagId: "", // Placeholder or actual value as needed
     });
 
-    await studentDetails.save();
+    await nfcDataInstance.save(); // Correctly call save on the instance
+
+    const biometricDataInstance = new BiometricData({
+      studentob_Id: studentDetails._id, // Correctly reference the saved StudentDetails document
+      studentId: studentId,
+      template: "" ,// Placeholder or actual value as needed
+    });
+
+    await biometricDataInstance.save(); // Correctly call save on the instance
 
     user.isActive = true;
     user.isVerified = true;
@@ -163,14 +179,15 @@ exports.verifyOtp = async (req, res) => {
     user.otpExpires = undefined;
     await user.save();
 
-     // Send studentId via email
-     sendEmail(email, "Your Student ID", `Your unique student ID is: ${studentId}`);
+    sendEmail(email, "Your Student ID", `Your unique student ID is: ${studentId}`);
 
     res.status(200).json({ message: "Account verified successfully." });
   } catch (err) {
+    console.error("Error verifying OTP:", err);
     res.status(500).json({ message: "Error verifying OTP." });
   }
 };
+
 
 // Endpoint to regenerate OTP
 exports.regenerateotp = async (req, res) => {
@@ -213,19 +230,28 @@ exports.login = async (req, res) => {
 
     const token = jwt.sign({ userId: user._id }, jwtSecret, { expiresIn: "1h" });
 
-    // Initialize an empty object for studentDetails
     let studentDetailsData = null;
+    let nfcDataInstance = null;
+    let biometricDataInstance = null;
 
-    // Fetch additional details if the user is a student
     if (user.role === "student") {
       studentDetailsData = await StudentDetails.findOne({ user: user._id });
-      // Check if student details are not found
-      if (!studentDetailsData) {
+
+      if (studentDetailsData) {
+        // Fetch NFC and Biometric data using studentDetailsData._id
+        nfcDataInstance = await NFCData.findOne({ studentob_Id: studentDetailsData._id });
+        biometricDataInstance = await BiometricData.findOne({ studentob_Id: studentDetailsData._id });
+
+        // Check if NFC or Biometric data is not found
+        if (!nfcDataInstance || !biometricDataInstance) {
+          console.log("NFC or Biometric data not found for the student.");
+        }
+      } else {
         return res.status(404).json({ message: "Student details not found." });
       }
     }
 
-    // Return the token and user details
+    // Return the token and user details along with NFC and Biometric data if available
     res.json({
       token,
       user: {
@@ -233,14 +259,17 @@ exports.login = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
-        studentDetails: studentDetailsData, // Include the student details
+        studentDetails: studentDetailsData,
+        nfcData: nfcDataInstance,
+        biometricData: biometricDataInstance,
       },
     });
   } catch (err) {
-    console.error(err);
+    console.error("Error during login:", err);
     res.status(500).json({ message: "Error during login.", error: err.message });
   }
 };
+
 
 // Function to get all users
 exports.getAllUsers = async (req, res) => {
@@ -286,15 +315,33 @@ exports.updateUser = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
+
+    // First, find the associated StudentDetails document
+    const studentDetails = await StudentDetails.findOneAndDelete({ user: userId });
+    if (studentDetails) {
+      // Use the ObjectId of the StudentDetails document to delete associated NFCData and BiometricData documents
+      await Promise.all([
+        NFCData.deleteMany({ studentob_Id: studentDetails._id }),
+        BiometricData.deleteMany({ studentob_Id: studentDetails._id })
+      ]);
+      console.log('Associated student details, NFC data, and biometric data deleted successfully');
+    } else {
+      console.log('No associated student details found, or already deleted');
+    }
+
+    // Finally, delete the User document
     const deletedUser = await User.findByIdAndDelete(userId);
     if (!deletedUser) {
       return res.status(404).json({ message: "User not found" });
     }
+
     res.status(204).send(); // Respond with a 204 status (No Content) for successful deletion
   } catch (err) {
+    console.error("Error deleting user and associated data:", err);
     res.status(500).json({ message: err.message });
   }
 };
+
 
 // Function to search for users by username or email
 exports.searchUsers = async (req, res) => {
@@ -324,18 +371,16 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const token = user.generatePasswordResetToken(); // Utilize the new method
-    await user.save(); // Save the user document to store the reset token and its expiration
+    // Generate a password reset token
+    const token = user.generatePasswordResetToken();
+    await user.save();
 
-    // Update to use HTTPS in production for the clientURL
+    // Construct reset URL
     const resetUrl = `${clientURL}/reset-password/${token}`;
 
-    // Assuming sendEmail is a function you've implemented to handle email sending
-    await sendEmail({
-      to: user.email,
-      subject: "Password Reset Request",
-      text: `To reset your password, please click on the following link: ${resetUrl}`,
-    });
+    // Send email with reset instructions
+    await sendEmail( user.email, "Password Reset Request", `You are receiving this email because you (or someone else) have requested the reset of the password for your account.\n\nPlease click on the following link, or paste this into your browser to complete the process within one hour of receiving it:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.`
+    );
 
     res.status(200).json({ message: "Password reset email sent." });
   } catch (err) {
@@ -343,6 +388,40 @@ exports.forgotPassword = async (req, res) => {
     res.status(500).json({ message: "Error sending password reset email." });
   }
 };
+
+exports.verifyPassword = async (req, res) => {
+  try {
+    const { token, newPassword, confirmNewPassword } = req.body;
+
+    if (newPassword !== confirmNewPassword) {
+      return res.status(400).json({ message: "Passwords do not match." });
+    }
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Password reset token is invalid or has expired." });
+    }
+
+    // Set the new password
+    user.password = await bcrypt.hash(newPassword, saltRounds);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    // Log the user in (optional) or send a confirmation email
+    res.status(200).json({ message: "Password has been updated." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error resetting password." });
+  }
+};
+
 
 // Function to count the number of users
 exports.countUsers = async (req, res) => {

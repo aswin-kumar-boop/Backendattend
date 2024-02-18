@@ -9,11 +9,11 @@ router.post('/register', userController.register);
 // Route for user login
 router.post('/login', userController.login);
 
-// Route for OTP verification
-router.post('/verify-otp', userController.verifyOtp);
+// Route for OTP verificationa
+router.post('/verify-otp',userController.verifyOtp);
 
 // Route for Rengerate OTP verification
-router.post('/regenerate-otp', userController.regenerateotp);
+router.post('/regenerate-otp', authenticateToken,userController.regenerateotp);
 
 // Route to get all users (demonstrating a protected route, assuming you have middleware for authentication)
 router.get('/users', authenticateToken, userController.getAllUsers);
@@ -28,7 +28,10 @@ router.put('/users/:id', authenticateToken, userController.updateUser);
 router.delete('/users/:id', authenticateToken, userController.deleteUser);
 
 // Route for users to initiate a password reset
-router.post('/forgot-password', userController.forgotPassword);
+router.post('/forgot-password', authenticateToken,userController.forgotPassword);
+
+// Route for users to initiate a password verify
+router.post('/verify-password', authenticateToken,userController.verifyPassword);
 
 // Route for searching users by username or email
 router.get('/search', authenticateToken, userController.searchUsers);
