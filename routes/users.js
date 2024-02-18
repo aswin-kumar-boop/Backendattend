@@ -12,6 +12,9 @@ router.post('/login', userController.login);
 // Route for OTP verificationa
 router.post('/verify-otp',userController.verifyOtp);
 
+// OTP verification route for login
+router.post('/login-verify',userController.LoginVerify);
+
 // Route for Rengerate OTP verification
 router.post('/regenerate-otp', authenticateToken,userController.regenerateotp);
 

@@ -216,44 +216,91 @@ exports.regenerateotp = async (req, res) => {
 // Login function
 exports.login = async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email }).select("+password");
-    if (!user || !user.isActive) {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email }).select("+password");
+
+    if (!user) {
       return res.status(401).json({
-        message: "Authentication failed. User not found or account not activated.",
+        message: "Authentication failed. User not found.",
       });
     }
 
-    const isMatch = await bcrypt.compare(req.body.password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Authentication failed. Wrong password." });
     }
 
+    // Assuming generateOtp() updates the user with a new OTP and its expiry time
+    const otp = user.generateOtp(); // Ensure this method also saves the OTP and expiry time in the user document
+    await user.save();
+
+    // Send OTP email
+    sendEmail(user.email, "Your OTP", `Your OTP is: ${otp}. It expires in 10 minutes.`);
+
+    // Generate a temporary JWT token. This token might include a flag indicating it's for pre-verification
+    const tempToken = jwt.sign(
+      { userId: user._id, preVerification: true },
+      jwtSecret,
+      { expiresIn: "10m" } // Set expiration to match OTP validity
+    );
+
+    res.json({
+      message: "OTP has been sent to your email.",
+      tempToken: tempToken, // Send the temporary token to the user
+    });
+  } catch (err) {
+    console.error("Error during login:", err);
+    res.status(500).json({ message: "Error during login." });
+  }
+};
+
+
+exports.LoginVerify = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const user = await User.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired OTP." });
+    }
+
+    // OTP is verified, so nullify the OTP fields to prevent reuse
+    user.otp = null;
+    user.otpExpires = null;
+    await user.save();
+
+    // Generate a JWT token for the user
     const token = jwt.sign({ userId: user._id }, jwtSecret, { expiresIn: "1h" });
 
     let studentDetailsData = null;
     let nfcDataInstance = null;
     let biometricDataInstance = null;
 
+    // Proceed to fetch additional details if the user is a student
     if (user.role === "student") {
       studentDetailsData = await StudentDetails.findOne({ user: user._id });
 
       if (studentDetailsData) {
-        // Fetch NFC and Biometric data using studentDetailsData._id
+        // Fetch NFC and Biometric data using the ID from studentDetailsData
         nfcDataInstance = await NFCData.findOne({ studentob_Id: studentDetailsData._id });
         biometricDataInstance = await BiometricData.findOne({ studentob_Id: studentDetailsData._id });
 
-        // Check if NFC or Biometric data is not found
-        if (!nfcDataInstance || !biometricDataInstance) {
-          console.log("NFC or Biometric data not found for the student.");
-        }
+        // Send an email to the user indicating successful login
+        sendEmail(user.email, "Login Successful", "You have successfully logged in to your student dashboard.");
       } else {
-        return res.status(404).json({ message: "Student details not found." });
+        console.log("Student details not found for this user.");
       }
     }
 
-    // Return the token and user details along with NFC and Biometric data if available
+    // Return the authentication token and user details, including any NFC and biometric data
     res.json({
-      token,
+      success: true,
+      message: "OTP verified successfully. Welcome to your dashboard.",
+      token: token,
       user: {
         id: user._id,
         username: user.username,
@@ -265,8 +312,8 @@ exports.login = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Error during login:", err);
-    res.status(500).json({ message: "Error during login.", error: err.message });
+    console.error("Error during OTP verification:", err);
+    res.status(500).json({ message: "Error during OTP verification." });
   }
 };
 
