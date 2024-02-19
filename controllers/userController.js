@@ -318,6 +318,7 @@ exports.LoginVerify = async (req, res) => {
 };
 
 
+
 // Function to get all users
 exports.getAllUsers = async (req, res) => {
   try {

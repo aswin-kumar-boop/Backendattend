@@ -1,4 +1,7 @@
 module.exports = {
+    timetable:{
+      TotalDuration: 6,
+    },
     attendance: {
       checkInWindowMinutes: 15, // Time before class starts when check-ins are allowed
       gracePeriodMinutes: 10, // Time after class starts when a student is considered late but not absent
