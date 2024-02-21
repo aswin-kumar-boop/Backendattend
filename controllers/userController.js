@@ -437,7 +437,8 @@ exports.forgotPassword = async (req, res) => {
 };
 
 // Function to reset password
-exports.verifyPassword = async (req, res) => {
+// Function to reset password
+exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword, confirmNewPassword } = req.body;
 
@@ -461,7 +462,10 @@ exports.verifyPassword = async (req, res) => {
     user.resetPasswordExpires = undefined;
     await user.save();
 
-    res.status(200).json({ message: "Password has been updated." });
+    // Send email to user upon successful password reset
+     sendEmail(user.email, "Password Reset Successful", "Your password has been successfully reset.");
+
+    res.status(200).json({ message: "Password has been updated. You will receive an email confirmation shortly." });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error resetting password." });

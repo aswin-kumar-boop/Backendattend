@@ -34,7 +34,7 @@ router.delete('/users/:id', authenticateToken, userController.deleteUser);
 router.post('/forgot-password', authenticateToken,userController.forgotPassword);
 
 // Route for users to initiate a password verify
-router.post('/verify-password', authenticateToken,userController.verifyPassword);
+router.post('/verify-password', authenticateToken,userController.resetPassword);
 
 // Route for searching users by username or email
 router.get('/search', authenticateToken, userController.searchUsers);
