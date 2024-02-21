@@ -13,7 +13,7 @@ router.post('/login', userController.login);
 router.post('/verify-otp',userController.verifyOtp);
 
 // OTP verification route for login
-router.post('/login-verify',userController.LoginVerify);
+router.post('/login-verify',authenticateToken,userController.LoginVerify);
 
 // Route for Rengerate OTP verification
 router.post('/regenerate-otp', authenticateToken,userController.regenerateotp);

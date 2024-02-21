@@ -3,9 +3,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const winston = require('winston'); // Optional, for logging
 const http = require('http');
 const socketIo = require('socket.io');
+const cron = require('node-cron'); // Import node-cron
 
 // Importing routes
 const userRoutes = require('./routes/users');
@@ -15,7 +15,6 @@ const timetableRoutes = require('./routes/timetableRoutes');
 const apiRoutes = require('./routes/api');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const settingsRouter = require('./routes/settings'); // Adjust the path as necessary
-
 
 const app = express();
 const server = http.createServer(app);
@@ -37,7 +36,17 @@ mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true, 
   useUnifiedTopology: true,
 })
-.then(() => console.log('MongoDB Connected'))
+.then(() => {
+  console.log('MongoDB Connected');
+
+  // Schedule a task to run once a day at midnight to remove unverified users
+  cron.schedule('0 0 * * *', async () => {
+    const threshold = new Date(new Date() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const User = require("../models/user"); // Ensure you have the correct path to your User model
+    await User.deleteMany({ isVerified: false, createdAt: { $lt: threshold } });
+    console.log('Expired unverified users removed.');
+  });
+})
 .catch(err => console.error('Failed to connect to MongoDB:', err));
 
 // Setup routes
@@ -47,30 +56,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/timetable', timetableRoutes); 
 app.use(express.json());
 
-// Socket.IO for real-time updates
-io.on('connection', (socket) => {
-  console.log('A user connected');
-
-  socket.on('joinRoom', (roomId) => {
-    socket.join(roomId);
-    console.log(`A user joined room: ${roomId}`);
-  });
-
-  socket.on('leaveRoom', (roomId) => {
-    socket.leave(roomId);
-    console.log(`A user left room: ${roomId}`);
-  });
-
-  socket.on('updateAttendance', (data) => {
-    // Validate and process the data here
-    // Then, broadcast the update to all clients in the room
-    io.to(data.roomId).emit('attendanceUpdated', data);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected');
-  });
-});
+// Additional setup for routes and socket.io...
 
 // Error handling middleware
 app.use((err, req, res, next) => {
