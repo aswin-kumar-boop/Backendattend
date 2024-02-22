@@ -162,7 +162,6 @@ exports.regenerateotp = async (req, res) => {
 };
 
 // Login function
-// Login function
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;

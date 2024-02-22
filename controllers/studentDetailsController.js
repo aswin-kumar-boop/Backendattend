@@ -1,243 +1,145 @@
 const StudentDetails = require('../models/StudentDetails');
 const NFCData = require('../models/NFCData');
 const BiometricData = require('../models/biometricData');
-const middleware = require('../helpers/studentmiddleware');
-const User = require('../models/user'); // Adjust the path according to your project structure
+const User = require('../models/user');
+const cryptoUtils = require('../helpers/encryption');
 const { sendEmail } = require('../helpers/emailHelper');
-//const upload = require('../helpers/uploadMiddleware').single('photo'); // Adjust the path as necessary
 
 // Function to update student details
 exports.updateStudentDetails = async (req, res) => {
-    const userId = req.user.userId; // Assuming req.user is populated from your authentication middleware
+    const userId = req.user.userId; 
     const { name, course, year, section, academicLevel, currentSemester } = req.body;
-  
-    // Validate input data (example: check if required fields are provided)
-    if (!name || !course || !year || !section || !academicLevel) {
-      return res.status(400).json({ message: "Missing required fields." });
-    }
-  
+
     try {
-      // Attempt to find the StudentDetails document linked to the user
-      const studentDetails = await StudentDetails.findByIdAndUpdate({ user: userId });
-  
-      if (!studentDetails) {
-        return res.status(404).json({ message: "Student details not found for the given user." });
-      }
-  
-      // If found, update the student details
-      studentDetails.name = name;
-      studentDetails.course = course;
-      studentDetails.year = year;
-      studentDetails.section = section;
-      studentDetails.academicLevel = academicLevel;
-      studentDetails.currentSemester = currentSemester || studentDetails.currentSemester; // Example of optional field
-  
-      await studentDetails.save();
+        const studentDetails = await StudentDetails.findOneAndUpdate(
+            { user: userId },
+            { name, course, year, section, academicLevel, currentSemester },
+            { new: true }
+        );
 
-      res.json({
-        message: "Student details updated successfully",
-        data: studentDetails,
-      });
+        if (!studentDetails) {
+            return res.status(404).json({ message: "Student details not found for the given user." });
+        }
+
+        res.json({
+            message: "Student details updated successfully",
+            data: studentDetails,
+        });
     } catch (err) {
-      // Log the error for server monitoring
-      console.error("Failed to update student details:", err);
-  
-      // Handle specific error types here if needed
-      if (err.name === 'ValidationError') {
-        return res.status(400).json({ message: "Validation error: " + err.message });
-      }
-  
-      // Fallback error message
-      res.status(500).json({ message: "An unexpected error occurred while updating student details." });
+        handleError(res, err, "An unexpected error occurred while updating student details.");
     }
-  };
+};
 
-
-// POST: Submit NFC data for a student
 // Function to update NFC data for a student
 exports.updateNFCData = async (req, res) => {
     try {
-      const { studentId, tagId } = req.body; // Assume tagId is the new NFC data
-  
-      // Find the StudentDetails document to get the ObjectId
-      const studentDetails = await StudentDetails.findOne({ studentId });
-      if (!studentDetails) {
-        return res.status(404).json({ message: "Student details not found." });
-      }
-  
-      // Update the NFCData document with the new tagId
-      const updatedNFCData = await NFCData.findOneAndUpdate(
-        { studentob_Id: studentDetails._id },
-        { tagId },
-        { new: true }
-      );
-  
-      if (!updatedNFCData) {
-        return res.status(404).json({ message: "NFC data not found for the given student." });
-      }
-  
-      res.json({ message: "NFC data updated successfully", data: updatedNFCData });
-    } catch (err) {
-      console.error("Error updating NFC data:", err);
-      res.status(500).json({ message: "Error updating NFC data." });
-    }
-  };
-  
+        const { studentId, tagId } = req.body;
+        const studentDetails = await StudentDetails.findOne({ studentId });
 
-// POST: Submit biometric data for a student
-// Function to update Biometric data for a student
+        if (!studentDetails) {
+            return res.status(404).json({ message: "Student details not found." });
+        }
+
+        const updatedNFCData = await NFCData.findOneAndUpdate(
+            { studentob_Id: studentDetails._id },
+            { tagId },
+            { new: true }
+        );
+
+        handleDataUpdateResponse(res, updatedNFCData, "NFC data");
+    } catch (err) {
+        handleError(res, err, "Error updating NFC data.");
+    }
+};
+
+// Function to update biometric data for a student
 exports.updateBiometricData = async (req, res) => {
     try {
-      const { studentId, template } = req.body; // Assume template is the new biometric data
-  
-      // Find the StudentDetails document to get the ObjectId
-      const studentDetails = await StudentDetails.findOne({ studentId });
-      if (!studentDetails) {
-        return res.status(404).json({ message: "Student details not found." });
-      }
-  
-      // Update the BiometricData document with the new template
-      const updatedBiometricData = await BiometricData.findOneAndUpdate(
-        { studentob_Id: studentDetails._id },
-        { template },
-        { new: true }
-      );
-  
-      if (!updatedBiometricData) {
-        return res.status(404).json({ message: "Biometric data not found for the given student." });
-      }
-  
-      res.json({ message: "Biometric data updated successfully", data: updatedBiometricData });
+        const { studentId, template: biometricTemplate } = req.body;
+
+        // Encrypt the biometric template before storing it
+        const encryptedTemplate = cryptoUtils.encrypt(biometricTemplate);
+
+        const studentDetails = await StudentDetails.findOne({ studentId });
+        if (!studentDetails) {
+            return res.status(404).json({ message: "Student details not found." });
+        }
+
+        const updatedBiometricData = await BiometricData.findOneAndUpdate(
+            { studentob_Id: studentDetails._id },
+            { template: encryptedTemplate }, // Store the encrypted template
+            { new: true }
+        );
+
+        if (!updatedBiometricData) {
+            return res.status(404).json({ message: "Biometric data record not found." });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Biometric data updated successfully.",
+            biometricData: updatedBiometricData, // Note: This is encrypted. Decryption needed for use.
+        });
     } catch (err) {
-      console.error("Error updating Biometric data:", err);
-      res.status(500).json({ message: "Error updating Biometric data." });
+        console.error("Error updating biometric data:", err);
+        res.status(500).json({ message: "Error updating biometric data." });
     }
-  };
-  
+};
 
-// // POST: Register a new student with pending approval status
-// exports.registerStudent = async (req, res) => {
-//     try {
-//         const studentDetails = new StudentDetails({
-//             ...req.body,
-//             status: 'pending_approval',
-//         });
 
-//         const savedDetails = await studentDetails.save();
-//         res.status(201).json({ message: 'Registration submitted, pending approval.', data: savedDetails });
-//     } catch (err) {
-//         res.status(500).json({ message: 'Error during registration', error: err.message });
-//     }
-// };
+// Function to handle data update response
+const handleDataUpdateResponse = (res, updatedData, dataType) => {
+    if (!updatedData) {
+        return res.status(404).json({ message: `${dataType} not found for the given student.` });
+    }
+    res.json({ message: `${dataType} updated successfully`, data: updatedData });
+};
 
-// POST: Approve a student
+// Function to handle common error
+const handleError = (res, err, errorMessage) => {
+    console.error(errorMessage, err);
+    res.status(500).json({ message: errorMessage });
+};
+
+// Function to approve a student
 exports.approveStudent = async (req, res) => {
     try {
-        // Correctly extract the student ID from the URL parameter
         const studentId = req.params.id;
-
-        // Log for debugging
-        console.log("Attempting to approve student with ID:", studentId);
-        const student = await StudentDetails.findByIdAndUpdate(studentId);
-        if (!student) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
-
-        // Check if the student is already rejected
-        if (student.status === 'approved') {
-            return res.status(400).json({ message: 'Student is already approved' });
-        }
-
-        // Find the student and update status to 'approved'
-        const updatedStudent = await StudentDetails.findByIdAndUpdate(
-            studentId, 
-            { status: 'approved' }, 
-            { new: true }
-        );
-
-        if (!updatedStudent) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
-        // Send an email notification to the student
-        const user = await User.findById(student.user);
-        if (user) {
-        sendEmail(user.email, "Student Approval", "Your student account has been approved.");
-    }
-
-        res.status(200).json({ message: 'Student approved successfully', data: updatedStudent });
+        const updatedStudent = await updateStudentStatus(studentId, 'approved', 'Student is already approved');
+        sendApprovalRejectionEmail(req, res, updatedStudent, 'approved', 'Student Approval', 'Your student account has been approved.');
     } catch (err) {
-        res.status(500).json({ message: 'Error approving student', error: err.message });
+        handleError(res, err, "Error approving student");
     }
 };
 
-// POST: Approve a student
+// Function to reject a student
 exports.rejectStudent = async (req, res) => {
     try {
-        // Correctly extract the student ID from the URL parameter
         const studentId = req.params.id;
-
-        // Log for debugging
-        console.log("Attempting to approve student with ID:", studentId);
-
-        const student = await StudentDetails.findByIdAndUpdate(studentId);
-        if (!student) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
-
-        // Check if the student is already rejected
-        if (student.status === 'rejected') {
-            return res.status(400).json({ message: 'Student is already rejected' });
-        }
-
-        // Find the student and update status to 'approved'
-        const updatedStudent = await StudentDetails.findByIdAndUpdate(
-            studentId, 
-            { status: 'rejected' }, 
-            { new: true }
-        );
-
-        if (!updatedStudent) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
-        // Send an email notification to the student
-       const user = await User.findByIdAndUpdate(student.user);
-       if (user) {
-       sendEmail(user.email, "Student Rejection", "Your student account has been rejected.");
-    }
-
-        res.status(200).json({ message: 'Student rejected successfully', data: updatedStudent });
+        const updatedStudent = await updateStudentStatus(studentId, 'rejected', 'Student is already rejected');
+        sendApprovalRejectionEmail(req, res, updatedStudent, 'rejected', 'Student Rejection', 'Your student account has been rejected.');
     } catch (err) {
-        res.status(500).json({ message: 'Error recejing student', error: err.message });
+        handleError(res, err, "Error rejecting student");
     }
 };
 
+// Function to update student status
+const updateStudentStatus = async (studentId, status, errorMessage) => {
+    const student = await StudentDetails.findByIdAndUpdate(studentId, { status }, { new: true });
+    if (!student) {
+        throw new Error(errorMessage);
+    }
+    return student;
+};
 
-
-// // POST: Reject a student
-// exports.rejectStudent = async (req, res) => {
-//     try {
-//         const studentId = req.params.id;
-        
-//         // Check if the student exists
-//         const student = await StudentDetails.findByIdAndUpdate(studentId);
-//         if (!student) {
-//             return res.status(404).json({ message: 'Student not found' });
-//         }
-
-//         // Check if the student is already rejected
-//         if (student.status === 'rejected') {
-//             return res.status(400).json({ message: 'Student is already rejected' });
-//         }
-
-//         // Update the student's status to 'rejected'
-//         student.status = 'rejected';
-//         const updatedStudent = await student.save();
-
-//         res.status(200).json({ message: 'Student rejected successfully', data: updatedStudent });
-//     } catch (err) {
-//         res.status(500).json({ message: 'Error rejecting student', error: err.message });
-//     }
-// };
+// Function to send approval/rejection email to the student
+const sendApprovalRejectionEmail = async (req, res, student, status, subject, message) => {
+    const user = await User.findById(student.user);
+    if (user) {
+        sendEmail(user.email, subject, message);
+    }
+    res.status(200).json({ message: `Student ${status} successfully`, data: student });
+};
 
 // GET: Retrieve a student's details by ID
 exports.getStudentDetails = async (req, res) => {
@@ -253,16 +155,10 @@ exports.getStudentDetails = async (req, res) => {
     }
 };
 
-
 // DELETE: Delete a student's details (with middleware checks)
 exports.deleteStudentDetails = async (req, res) => {
     try {
         const student = req.student; // Student object attached by middleware
-
-        // Check if the student is pending approval (using middleware)
-        // if (student.status !== 'pending_approval') {
-        //     return res.status(403).json({ message: 'Student cannot be rejected or deleted' });
-        // }
 
         // Delete student's NFC and biometric data (using middleware)
         await middleware.deleteStudentData(req, res, async () => {
@@ -288,7 +184,6 @@ exports.countTotalStudents = async (req, res) => {
         res.status(500).json({ message: "Error counting total students", error: err.message });
     }
 };
-
 
 // Function to count students by status
 exports.countStudentsByStatus = async (req, res) => {

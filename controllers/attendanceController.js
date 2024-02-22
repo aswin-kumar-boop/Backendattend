@@ -1,89 +1,64 @@
-const cron = require('node-cron');
 const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
 const StudentDetails = require('../models/StudentDetails');
 const NFCData = require('../models/NFCData');
 const BiometricData = require('../models/biometricData');
 const Attendance = require('../models/attendance');
 const Timetable = require('../models/Timetable');
 const globalSettings = require('../config/globalSettings');
-const bcrypt = require('bcrypt');
+const cron = require('node-cron');
 
-// Utility function to determine if a session is a lecture or lab
-const getSessionType = (duration) => duration >= 3 ? 'LAB' : 'LECTURE';
 
 // Function to record student attendance for a session
 exports.checkIn = async (req, res) => {
   try {
-    const { currentTime } = req.body;
-    const { studentId, nfcTagId, biometricData, exceptionalCircumstances, exceptionDuration } = req.validatedCheckInData;
-
+    const { currentTime, studentId, nfcTagId, biometricData } = req.body;
     const timestamp = new Date(currentTime);
 
-    // Fetch the student's details
+    // Fetch student details
     const student = await StudentDetails.findById(studentId);
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
+    if (!student) return res.status(404).json({ message: 'Student not found' });
 
-    if (student.status !== 'approved') {
-      return res.status(403).json({ message: 'Student not approved for check-in' });
-    }
+    // Validate NFC or Biometric data
+    const isValidNFC = nfcTagId ? await NFCData.findOne({ studentob_Id: student._id, tagId: nfcTagId }) : true;
+    const biometricRecord = await BiometricData.findOne({ studentob_Id: student._id });
+    const isValidBiometric = biometricData && biometricRecord ? await bcrypt.compare(biometricData, biometricRecord.template) : true;
 
-    // Validate NFC or biometric data
-    let isValidNFC = !nfcTagId || await NFCData.exists({ studentId, tagId: nfcTagId });
-    let isValidBiometric = await bcrypt.compare(biometricData, BiometricData.template);
+    if (!isValidNFC && !isValidBiometric) return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
 
-    if (!isValidNFC && !isValidBiometric) {
-      return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
-    }
-
-    // Determine the status (OnTime, Late, or VeryLate) based on class schedule
+    // Find current or next session for check-in
+    const day = timestamp.toLocaleString('en-US', { weekday: 'short' }).toUpperCase();
     const currentSession = await Timetable.findOne({
-      day: timestamp.toLocaleString('en-US', { weekday: 'short' }).toUpperCase(),
-      startTime: { $lte: timestamp },
-      endTime: { $gte: timestamp }
+      classId: student.classId,
+      sessions: {
+        $elemMatch: {
+          day,
+          startTime: { $lte: timestamp },
+          endTime: { $gte: timestamp }
+        }
+      }
     });
 
-    if (!currentSession) {
-      return res.status(400).json({ message: 'No class scheduled at this time' });
-    }
+    if (!currentSession) return res.status(400).json({ message: 'No class scheduled at this time' });
 
-    const classStartTime = new Date(currentSession.startTime);
-    const classDuration = (currentSession.endTime - currentSession.startTime) / (1000 * 60 * 60); // Duration in hours
-    const classStartWindow = new Date(classStartTime.getTime() - globalSettings.attendance.checkInWindowMinutes * 60000);
-    const lateWindowEnd = new Date(classStartTime.getTime() + globalSettings.attendance.gracePeriodMinutes * 60000);
-    const veryLateWindowEnd = classDuration >= 3 ? new Date(classStartTime.getTime() + (classDuration / 2 * 60 * 60 * 1000)) : lateWindowEnd;
+    const session = currentSession.sessions.find(s => 
+      s.day === day && 
+      s.startTime <= timestamp && 
+      s.endTime >= timestamp
+    );
 
-    let status;
-    if (timestamp >= classStartWindow && timestamp <= classStartTime) {
-      status = 'OnTime';
-    } else if (timestamp > classStartTime && timestamp <= lateWindowEnd) {
-      status = 'Late';
-    } else if (timestamp > lateWindowEnd && timestamp <= veryLateWindowEnd) {
-      status = classDuration >= 3 ? 'VeryLate' : 'Late';
-    } else {
-      return res.status(400).json({ message: 'Check-in time is outside the permitted window' });
-    }
+    if (!session) return res.status(400).json({ message: 'No session found within the current timetable' });
 
-    // Check for exceptional circumstances
-    let exceptionalDetails = {};
-    if (exceptionalCircumstances) {
-      exceptionalDetails = {
-        exceptionalCircumstances: true,
-        exceptionDuration: exceptionDuration || 1 // Default to 1 hour if not specified
-      };
-    }
+    // Logic to determine attendance status (OnTime, Late, VeryLate)
+    // Placeholder - Implement based on your rules
+    const attendanceStatus = 'OnTime';
 
-    // Create a new attendance record
-    const attendanceRecord = new Attendance({
-      studentId: student._id,
-      date: timestamp.setHours(0, 0, 0, 0),
-      checkIns: [{ time: timestamp, status: status }],
-      ...exceptionalDetails
-    });
-
-    // Save the attendance record to the database
-    await attendanceRecord.save();
+    // Record attendance
+    const attendanceRecord = await Attendance.findOneAndUpdate(
+      { studentId, date: timestamp.toISOString().split('T')[0] },
+      { $push: { checkIns: { time: timestamp, sessionType: session.sessionType, status: attendanceStatus } } },
+      { upsert: true, new: true }
+    );
 
     res.status(200).json({ message: 'Check-in recorded successfully', data: attendanceRecord });
   } catch (err) {
@@ -91,6 +66,7 @@ exports.checkIn = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
 
 
 // Function to handle student check-out
