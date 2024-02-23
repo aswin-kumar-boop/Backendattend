@@ -19,7 +19,7 @@ const attendanceSchema = new mongoose.Schema({
       },
       status: {
         type: String,
-        enum: ['OnTime', 'Late', 'VeryLate'],
+        enum: ['OnTime', 'Late', 'VeryLate', 'Too Early'], // Include 'Too Early' in the enum
         required: true
       }
     }
@@ -30,16 +30,16 @@ const attendanceSchema = new mongoose.Schema({
         type: Date,
         required: true
       },
-      nfcTagId: String, // You can adjust this based on your data
-      biometricData: String, // You can adjust this based on your data
-      classDurationHours: Number // Save class duration in hours
+      nfcTagId: String,
+      biometricData: String,
+      classDurationHours: Number
     }
   ],
   absences: [
     {
       sessionId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Timetable', // Reference to the timetable model
+        ref: 'Timetable',
         required: true
       },
       time: {
@@ -50,13 +50,13 @@ const attendanceSchema = new mongoose.Schema({
   ],
   status: {
     type: String,
-    enum: ['Present', 'Late', 'Absent', 'Irregular'],
-    default: 'Absent' // Default status
+    enum: ['Present', 'Late', 'Too Early', 'Absent', 'Irregular'],
+    default: 'Absent'
   },
   exceptionalCircumstances: Boolean,
   exceptionDuration: {
     type: Number,
-    default: 1 // Default duration in hours for exceptional circumstances
+    default: 1
   }
 });
 

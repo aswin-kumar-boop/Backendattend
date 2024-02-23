@@ -7,136 +7,212 @@ const Attendance = require('../models/attendance');
 const Timetable = require('../models/Timetable');
 const globalSettings = require('../config/globalSettings');
 const cron = require('node-cron');
+const cryptoUtils = require('../helpers/encryption');
 
 
-// Function to record student attendance for a session
-exports.checkIn = async (req, res) => {
-  try {
-    const { currentTime, studentId, nfcTagId, biometricData } = req.body;
-    const timestamp = new Date(currentTime);
+// Validate NFC data
+async function validateNFC(nfcTagId, studentId) {
+  if (!nfcTagId) return true;
+  const nfcValid = await NFCData.findOne({ studentId, tagId: nfcTagId });
+  return !!nfcValid;
+}
 
-    // Fetch student details
-    const student = await StudentDetails.findById(studentId);
-    if (!student) return res.status(404).json({ message: 'Student not found' });
+// Validate Biometric data
+async function validateBiometric(biometricData, studentId) {
+  if (!biometricData) return true;
+  const biometricRecord = await BiometricData.findOne({ studentId });
+  if (!biometricRecord) return false;
+  const decryptedBiometricData = cryptoUtils.decrypt(biometricRecord.template);
+  return biometricData === decryptedBiometricData;
+}
 
-    // Validate NFC or Biometric data
-    const isValidNFC = nfcTagId ? await NFCData.findOne({ studentob_Id: student._id, tagId: nfcTagId }) : true;
-    const biometricRecord = await BiometricData.findOne({ studentob_Id: student._id });
-    const isValidBiometric = biometricData && biometricRecord ? await bcrypt.compare(biometricData, biometricRecord.template) : true;
+// Determine the attendance status based on check-in time and session start time
+function determineAttendanceStatus(sessionStartTime, timestamp) {
+  const gracePeriodEndTime = new Date(sessionStartTime.getTime() + globalSettings.attendance.gracePeriodMinutes * 60000);
+  const checkInWindowStartTime = new Date(sessionStartTime.getTime() - globalSettings.attendance.checkInWindowMinutes * 60000);
 
-    if (!isValidNFC && !isValidBiometric) return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
+  if (timestamp < checkInWindowStartTime) {
+      return 'Too Early';
+  } else if (timestamp <= gracePeriodEndTime) {
+      return 'On Time';
+  } else {
+      return 'Late';
+  }
+}
 
-    // Find current or next session for check-in
-    const day = timestamp.toLocaleString('en-US', { weekday: 'short' }).toUpperCase();
-    const currentSession = await Timetable.findOne({
-      classId: student.classId,
-      sessions: {
-        $elemMatch: {
-          day,
-          startTime: { $lte: timestamp },
-          endTime: { $gte: timestamp }
-        }
-      }
+// Record attendance in the database
+async function recordAttendance(studentId, sessionId, date, status) {
+  // Find the attendance record or create a new one if it doesn't exist
+  let attendance = await Attendance.findOne({ studentId: studentId, date: date });
+
+  if (!attendance) {
+    // If no attendance record exists for this date, create a new one
+    attendance = new Attendance({
+      studentId: studentId,
+      date: date,
+      // Initialize the arrays as needed; for example, add a session to absences if marking an absence
     });
+  }
 
-    if (!currentSession) return res.status(400).json({ message: 'No class scheduled at this time' });
+  // Based on your logic, update the attendance record
+  // This could involve pushing a new check-in record, updating status, etc.
+  // For example:
+  attendance.checkIns.push({
+    time: new Date(), // Use the actual check-in time
+    status: status, // 'OnTime', 'Late', etc.
+  });
 
-    const session = currentSession.sessions.find(s => 
-      s.day === day && 
-      s.startTime <= timestamp && 
-      s.endTime >= timestamp
-    );
+  // Save the updated attendance record
+  await attendance.save();
 
-    if (!session) return res.status(400).json({ message: 'No session found within the current timetable' });
+  return attendance;
+}
 
-    // Logic to determine attendance status (OnTime, Late, VeryLate)
-    // Placeholder - Implement based on your rules
-    const attendanceStatus = 'OnTime';
 
-    // Record attendance
-    const attendanceRecord = await Attendance.findOneAndUpdate(
-      { studentId, date: timestamp.toISOString().split('T')[0] },
-      { $push: { checkIns: { time: timestamp, sessionType: session.sessionType, status: attendanceStatus } } },
-      { upsert: true, new: true }
-    );
+// Find the current or next available session for check-in
+async function findSessionForCheckIn(studentId, timestamp) {
+  const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
+  const now = timestamp.getHours() * 60 + timestamp.getMinutes();
+  const sessions = await Timetable.aggregate([
+      { $match: { 'sessions.day': dayOfWeek } },
+      { $unwind: '$sessions' },
+      { $match: { 'sessions.day': dayOfWeek, 'sessions.startTime': { $gte: new Date(timestamp.toISOString()) } } },
+      { $sort: { 'sessions.startTime': 1 } },
+      { $limit: 1 }
+  ]);
 
-    res.status(200).json({ message: 'Check-in recorded successfully', data: attendanceRecord });
+  return sessions[0];
+}
+
+// Main check-in function
+exports.checkIn = async (req, res) => {
+  const { currentTime, studentId, nfcTagId , biometricData } = req.body;
+  const timestamp = new Date(currentTime);
+
+  try {
+      if (globalSettings.isNonWorkingDay(timestamp)) {
+          return res.status(400).json({ message: 'Cannot check in on non-working days.' });
+      }
+
+      const student = await StudentDetails.findById(studentId);
+      if (!student) return res.status(404).json({ message: 'Student not found' });
+
+      const isValidNFC = await validateNFC(nfcTagId, student._id);
+      const isValidBiometric = await validateBiometric(biometricData, student._id);
+      if (!isValidNFC || !isValidBiometric) {
+          return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
+      }
+
+      const session = await findSessionForCheckIn(student._id, timestamp);
+      if (!session) return res.status(404).json({ message: 'No session available for check-in at this time.' });
+
+      const attendanceStatus = determineAttendanceStatus(new Date(session.sessions.startTime), timestamp);
+      const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
+      const attendanceRecord = await recordAttendance(studentId, session.sessions._id, date, attendanceStatus);
+
+      res.status(200).json({ message: 'Check-in successful', session: session.sessions, attendance: attendanceRecord });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+      console.error('Error during check-in:', err);
+      res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
-
 
 
 // Function to handle student check-out
 exports.checkOut = async (req, res) => {
-  try {
-    const { studentId, currentTime, nfcTagId, biometricData } = req.body;
+  const { studentId, nfcTagId, biometricData } = req.body;
+    const timestamp = new Date();
 
-    // Fetch the student's details
-    const student = await StudentDetails.findById(studentId);
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
+    try {
+        const student = await StudentDetails.findById(studentId);
+        if (!student) {
+            return res.status(404).json({ message: 'Student not found' });
+        }
+
+        const isValidNFC = await validateNFC(nfcTagId, student._id);
+        const isValidBiometric = await validateBiometric(biometricData, student._id);
+        if (!isValidNFC || !isValidBiometric) {
+            return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
+        }
+
+        // Assuming a function to find the current session based on the timestamp
+        // This could be similar to `findSessionForCheckIn` but tailored for checkout
+        const session = await findCurrentSessionForCheckout(student._id, timestamp);
+        if (!session) {
+            return res.status(404).json({ message: 'No active session found for checkout.' });
+        }
+
+        // Update the attendance record to reflect the checkout
+        // This could involve setting a checkout time or updating the status
+        const updatedAttendance = await recordCheckout(studentId, session.sessions._id, timestamp);
+        
+        res.status(200).json({ message: 'Checkout successful', session: session.sessions, attendance: updatedAttendance });
+    } catch (err) {
+        console.error('Error during checkout:', err);
+        res.status(500).json({ message: 'Server error', error: err.message });
     }
+}
 
-    if (student.status !== 'approved') {
-      return res.status(403).json({ message: 'Student not approved for check-out' });
-    }
+async function findCurrentSessionForCheckout(studentId, timestamp) {
+  const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
+  const currentSessions = await Timetable.aggregate([
+      { $match: { 'sessions.day': dayOfWeek } },
+      { $unwind: '$sessions' },
+      { $match: {
+          'sessions.startTime': { $lte: new Date(timestamp) },
+          'sessions.endTime': { $gte: new Date(timestamp) }
+      }},
+      { $sort: { 'sessions.endTime': -1 } },
+      { $limit: 1 }
+  ]);
 
-    // Authenticate using NFC and/or biometric data here
-    let isValidNFC = !nfcTagId || await NFCData.exists({ studentId, tagId: nfcTagId });
-    let isValidBiometric = await bcrypt.compare(biometricData, BiometricData.template);
+  return currentSessions.length > 0 ? currentSessions[0] : null;
+}
 
-    if (!isValidNFC || !isValidBiometric) {
-      return res.status(401).json({ message: 'NFC or biometric authentication failed' });
-    }
+async function recordCheckout(studentId, sessionId, timestamp) {
+  const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date to the start of the day
+  const attendance = await Attendance.findOne({
+      studentId: mongoose.Types.ObjectId(studentId),
+      sessionId: mongoose.Types.ObjectId(sessionId),
+      date: date
+  });
 
-    const timestamp = new Date(currentTime);
-    const date = timestamp.setHours(0, 0, 0, 0);
-
-    let attendanceRecord = await Attendance.findOne({ studentId: student._id, date: date });
-    if (!attendanceRecord) {
-      return res.status(400).json({ message: 'No check-in record found for this student on this date' });
-    }
-
-    if (attendanceRecord.checkIns.length === 0) {
-      return res.status(400).json({ message: 'Cannot check out before checking in' });
-    }
-
-    // Determine the minimum checkout time
-    const currentSession = await Timetable.findOne({
-      _id: attendanceRecord.checkIns[0].sessionId
-    });
-    if (!currentSession) {
-      return res.status(400).json({ message: 'No class session found for check-in' });
-    }
-
-    const sessionStartTime = new Date(currentSession.startTime);
-    const minimumDuration = globalSettings.attendance.minimumSessionDurationMinutes; // Minimum duration in minutes
-    const minimumCheckoutTime = new Date(sessionStartTime.getTime() + minimumDuration * 60 * 1000);
-
-    if (timestamp < minimumCheckoutTime) {
-      return res.status(400).json({ message: `Checkout time is too early. Minimum checkout time is ${minimumCheckoutTime.toISOString()}.` });
-    }
-
-    // Proceed to record the check-out time
-    const checkoutTime = timestamp;
-    attendanceRecord.checkOuts.push({ time: checkoutTime, nfcTagId, biometricData });
-
-    const durationInMilliseconds = checkoutTime - attendanceRecord.checkIns[0].time;
-    const durationInMinutes = Math.floor(durationInMilliseconds / (1000 * 60));
-    const durationInHours = durationInMinutes / 60;
-    attendanceRecord.classDurationHours = durationInHours;
-
-    await attendanceRecord.save();
-    res.status(200).json({ message: 'Check-out recorded successfully', attendanceRecord });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+  if (!attendance) {
+      console.log('No attendance record found for checkout.');
+      return null; // Adjust based on your application's needs
   }
-};
+
+  const session = await Timetable.findById(sessionId);
+  if (!session) {
+      console.log('Session not found.');
+      return null; // Adjust based on your application's needs
+  }
+
+  const sessionDuration = (new Date(session.endTime) - new Date(session.startTime)) / (1000 * 60 * 60);
+  const minimumRequiredDuration = sessionDuration <= 2 ? sessionDuration - 0.25 : sessionDuration - 0.75;
+
+  const lastCheckIn = attendance.checkIns[attendance.checkIns.length - 1];
+  const checkInTime = new Date(lastCheckIn.time);
+  const checkoutTime = new Date(timestamp);
+  const attendedDurationHours = (checkoutTime - checkInTime) / (1000 * 60 * 60);
+
+  if (attendedDurationHours >= minimumRequiredDuration) {
+      // Update the attendance record with checkout information
+      attendance.checkOuts.push({
+          time: checkoutTime,
+          classDurationHours: attendedDurationHours
+      });
+
+      // Update status based on attended duration
+      attendance.status = 'Present';
+  } else {
+      // Handle scenarios where attended duration is less than required
+      attendance.status = 'Incomplete';
+  }
+
+  await attendance.save();
+  return attendance;
+}
 
 
 // Function to perform periodic checks and update attendance records
