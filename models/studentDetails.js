@@ -5,7 +5,7 @@ const studentDetailsSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, 
     required: true,
     ref: 'User' 
-    },
+  },
   studentId: {
     type: String,
     required: false,
@@ -39,6 +39,11 @@ const studentDetailsSchema = new mongoose.Schema({
     type: String,
     enum: ['pending_approval', 'approved', 'rejected'],
     default: 'pending_approval'
+  },
+  departmentName: {
+    type: String,
+    enum: ['Computer Engineering', 'Mechanical Engineering', 'Electrical Engineering', 'Civil Engineering', 'Chemical Engineering', 'Aerospace Engineering', 'Biomedical Engineering', 'Environmental Engineering', 'Industrial Engineering', 'Other'], // Add other engineering departments as needed
+    required: true
   },
   // Field to store the URL or path to the student's photo
   // photoUrl: {

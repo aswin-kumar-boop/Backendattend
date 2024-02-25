@@ -10,6 +10,7 @@ const cron = require('node-cron');
 const cryptoUtils = require('../helpers/encryption');
 
 
+
 // Validate NFC data
 async function validateNFC(nfcTagId, studentId) {
   if (!nfcTagId) return true;
@@ -86,36 +87,49 @@ async function findSessionForCheckIn(studentId, timestamp) {
 
 // Main check-in function
 exports.checkIn = async (req, res) => {
-  const { currentTime, studentId, nfcTagId , biometricData } = req.body;
-  const timestamp = new Date(currentTime);
+  const { studentId, nfcTagId, biometricData } = req.body;
+  const timestamp = new Date();
 
   try {
-      if (globalSettings.isNonWorkingDay(timestamp)) {
-          return res.status(400).json({ message: 'Cannot check in on non-working days.' });
-      }
+    const student = await StudentDetails.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
 
-      const student = await StudentDetails.findById(studentId);
-      if (!student) return res.status(404).json({ message: 'Student not found' });
+    const isValidNFC = await validateNFC(nfcTagId, student._id);
+    const isValidBiometric = await validateBiometric(biometricData, student._id);
+    if (!isValidNFC || !isValidBiometric) {
+      return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
+    }
 
-      const isValidNFC = await validateNFC(nfcTagId, student._id);
-      const isValidBiometric = await validateBiometric(biometricData, student._id);
-      if (!isValidNFC || !isValidBiometric) {
-          return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
-      }
+    // Find the current session for check-in
+    const session = await findSessionForCheckIn(student._id, timestamp);
+    if (!session) {
+      return res.status(404).json({ message: 'No session available for check-in at this time.' });
+    }
 
-      const session = await findSessionForCheckIn(student._id, timestamp);
-      if (!session) return res.status(404).json({ message: 'No session available for check-in at this time.' });
+    // Ensure the session is present in the timetable
+    const timetableSession = await Timetable.findOne({
+      _id: session._id, // Assuming session has a unique identifier
+      'sessions.startTime': session.startTime,
+      'sessions.endTime': session.endTime,
+    });
+    if (!timetableSession) {
+      return res.status(404).json({ message: 'Session not found in the timetable.' });
+    }
 
-      const attendanceStatus = determineAttendanceStatus(new Date(session.sessions.startTime), timestamp);
-      const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
-      const attendanceRecord = await recordAttendance(studentId, session.sessions._id, date, attendanceStatus);
+    // Determine attendance status and record attendance
+    const attendanceStatus = determineAttendanceStatus(session.startTime, timestamp);
+    const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
+    const attendanceRecord = await recordAttendance(studentId, session._id, date, attendanceStatus);
 
-      res.status(200).json({ message: 'Check-in successful', session: session.sessions, attendance: attendanceRecord });
+    res.status(200).json({ message: 'Check-in successful', session: session, attendance: attendanceRecord });
   } catch (err) {
-      console.error('Error during check-in:', err);
-      res.status(500).json({ message: 'Server error', error: err.message });
+    console.error('Error during check-in:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
 
 
 // Function to handle student check-out
@@ -233,23 +247,12 @@ async function performPeriodicCheck() {
       for (const student of students) {
         // Set the date to the beginning of the day for consistent querying
         const date = new Date(currentTimestamp).setHours(0, 0, 0, 0);
-        // Find the attendance record for the student for today's date
-        let attendanceRecord = await Attendance.findOne({
-          studentId: student._id,
-          date: date,
-        });
-
-        // If there is no attendance record for today, create a new one
-        if (!attendanceRecord) {
-          attendanceRecord = new Attendance({
-            studentId: student._id,
-            date: date,
-            checkIns: [],
-            checkOuts: [],
-            absences: [],
-            status: 'Absent', // Assume absent by default
-          });
-        }
+        // Find or create the attendance record for the student for today's date
+        let attendanceRecord = await Attendance.findOneAndUpdate(
+          { studentId: student._id, date: date },
+          { $setOnInsert: { studentId: student._id, date: date } }, // Set default values if the record doesn't exist
+          { upsert: true, new: true }
+        );
 
         // If the student has not checked in, mark them as absent
         if (!attendanceRecord.checkIns.some(checkIn => checkIn.sessionId.equals(session._id))) {
@@ -268,6 +271,7 @@ async function performPeriodicCheck() {
   }
 }
 
+
 // Function to get attendance summary
 exports.getAttendanceSummary = async (req, res) => {
   try {
@@ -281,23 +285,36 @@ exports.getAttendanceSummary = async (req, res) => {
     // Convert startDate and endDate to Date objects
     const start = new Date(startDate);
     const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999); // Set end date to the end of the day
 
     // MongoDB aggregation to calculate attendance statistics
     const summary = await Attendance.aggregate([
       // Match records within the date range for the specified class
+      // Assuming studentId in Attendance refers to the student, not class. Adjust accordingly if needed.
       {
         $match: {
-          studentId: mongoose.Types.ObjectId(classId),
           date: { $gte: start, $lte: end },
         },
       },
-      // Group by student ID and date, and aggregate attendance data
+      // Lookup to join with StudentDetails to filter by classId
+      {
+        $lookup: {
+          from: 'studentdetails',
+          localField: 'studentId',
+          foreignField: '_id',
+          as: 'studentInfo',
+        },
+      },
+      // Filter documents after lookup to include only those belonging to the specified classId
+      {
+        $match: {
+          'studentInfo.classId': mongoose.Types.ObjectId(classId),
+        },
+      },
+      // Group by student ID to aggregate attendance data
       {
         $group: {
-          _id: {
-            studentId: '$studentId',
-            date: '$date',
-          },
+          _id: '$studentId',
           totalClasses: { $sum: 1 },
           presentCount: {
             $sum: { $cond: [{ $eq: ['$status', 'Present'] }, 1, 0] },
@@ -313,26 +330,16 @@ exports.getAttendanceSummary = async (req, res) => {
           },
         },
       },
-      // Optional: Join with the StudentDetails collection to get student information
-      {
-        $lookup: {
-          from: 'studentdetails',
-          localField: '_id.studentId',
-          foreignField: '_id',
-          as: 'studentInfo',
-        },
-      },
       // Optional: Format the output
       {
         $project: {
-          studentId: '$_id.studentId',
-          date: '$_id.date',
+          studentId: '$_id',
           totalClasses: 1,
           presentCount: 1,
           lateCount: 1,
           absentCount: 1,
           totalDuration: 1,
-          studentInfo: { $arrayElemAt: ['$studentInfo', 0] }, // Extract the student info
+          studentInfo: { $first: '$studentInfo' }, // Adjust based on your data structure
         },
       },
     ]);
@@ -356,32 +363,39 @@ exports.calculateMonthlyAttendance = async (req, res) => {
     }
 
     // Parse month and year to integers
-    const monthInt = parseInt(month);
-    const yearInt = parseInt(year);
+    const monthInt = parseInt(month, 10);
+    const yearInt = parseInt(year, 10);
+
+    // Validate month and year
+    if (monthInt < 1 || monthInt > 12 || isNaN(monthInt) || isNaN(yearInt)) {
+      return res.status(400).json({ message: 'Invalid month or year' });
+    }
 
     // Calculate the first and last day of the month
-    const startDate = new Date(yearInt, monthInt - 1, 1);
-    const endDate = new Date(yearInt, monthInt, 0);
+    const startDate = new Date(Date.UTC(yearInt, monthInt - 1, 1));
+    const endDate = new Date(Date.UTC(yearInt, monthInt, 0, 23, 59, 59, 999));
 
     // Find all attendance records for the student in the given month
     const attendanceRecords = await Attendance.find({
       studentId: mongoose.Types.ObjectId(studentId),
-      date: { $gte: startDate, $lte: endDate }
+      date: { $gte: startDate, $lte: endDate },
     });
 
-    // Calculate the number of present days
-    const presentDays = attendanceRecords.filter(record => record.status === 'Present').length;
+    // Calculate the number of present, late, and absent days
+    const attendanceSummary = attendanceRecords.reduce((acc, record) => {
+      acc[record.status] = (acc[record.status] || 0) + 1;
+      acc.totalDuration += record.classDurationHours || 0;
+      return acc;
+    }, { Present: 0, Late: 0, Absent: 0, totalDuration: 0 });
 
     // Calculate the total number of session days in the month
-    // Assuming you have a function getSessionDays to calculate the total session days
+    // This requires a hypothetical function `getSessionDays` that calculates the total session days
+    // For the purpose of this example, let's assume it returns a fixed number
+    // Please replace this with your actual function to calculate session days
     const totalSessionDays = await getSessionDays(startDate, endDate, studentId);
 
-    // Calculate the total attendance hours duration in class
-    const totalDurationInMinutes = attendanceRecords.reduce((total, record) => total + record.classDurationHours, 0);
-    const totalDurationInHours = totalDurationInMinutes / 60;
-
     // Calculate the attendance percentage
-    const attendancePercentage = (presentDays / totalSessionDays) * 100;
+    const attendancePercentage = ((attendanceSummary.Present + attendanceSummary.Late) / totalSessionDays) * 100;
 
     // Respond with the updated attendance data
     res.json({
@@ -389,13 +403,62 @@ exports.calculateMonthlyAttendance = async (req, res) => {
       month: monthInt,
       year: yearInt,
       attendancePercentage: attendancePercentage.toFixed(2),
-      totalDurationInHours: totalDurationInHours.toFixed(2), // Total duration in hours
-      details: attendanceRecords
+      totalDurationInHours: (attendanceSummary.totalDuration / 60).toFixed(2),
+      presentDays: attendanceSummary.Present,
+      lateDays: attendanceSummary.Late,
+      absentDays: attendanceSummary.Absent,
+      totalSessionDays,
+      details: attendanceRecords,
     });
   } catch (err) {
+    console.error('Error calculating monthly attendance:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+async function getSessionDays(startDate, endDate, studentId) {
+  const classIds = await getClassIdsForStudent(studentId);
+  if (classIds.length === 0) {
+    return 0; // Early return if no class IDs are associated with the student
+  }
+
+  const timetables = await Timetable.find({
+    classId: { $in: classIds },
+    $or: [
+      { startDate: { $lte: endDate }, endDate: { $gte: startDate } },
+      { startDate: { $lte: startDate }, endDate: { $gte: endDate } },
+    ],
+  }).lean();
+
+  let sessionDaysSet = new Set();
+  timetables.forEach(timetable => {
+    timetable.sessions.forEach(session => {
+      // Example assumes 'day' is stored as 'MON', 'TUE', etc.
+      sessionDaysSet.add(session.day.toUpperCase());
+    });
+  });
+
+  // Calculate the total number of unique session days
+  let totalSessionDays = 0;
+  sessionDaysSet.forEach(dayOfWeek => {
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      if (currentDate.getUTCDay() === convertDayToNumber(dayOfWeek)) {
+        totalSessionDays++;
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+  });
+
+  return totalSessionDays;
+}
+
+function convertDayToNumber(day) {
+  const mapping = { "SUN": 0, "MON": 1, "TUE": 2, "WED": 3, "THU": 4, "FRI": 5, "SAT": 6 };
+  return mapping[day];
+}
+
+
 
 // Function to calculate semester attendance
 exports.calculateSemesterAttendance = async (req, res) => {

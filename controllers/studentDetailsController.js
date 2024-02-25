@@ -4,16 +4,17 @@ const BiometricData = require('../models/biometricData');
 const User = require('../models/user');
 const cryptoUtils = require('../helpers/encryption');
 const { sendEmail } = require('../helpers/emailHelper');
+const Department = require('../models/Department');
 
 // Function to update student details
 exports.updateStudentDetails = async (req, res) => {
     const userId = req.user.userId; 
-    const { name, course, year, section, academicLevel, currentSemester } = req.body;
+    const { name, course, year, section, academicLevel, currentSemester, departmentName } = req.body;
 
     try {
         const studentDetails = await StudentDetails.findOneAndUpdate(
             { user: userId },
-            { name, course, year, section, academicLevel, currentSemester },
+            { name, course, year, section, academicLevel, currentSemester, departmentName },
             { new: true }
         );
 
@@ -101,11 +102,39 @@ const handleError = (res, err, errorMessage) => {
     res.status(500).json({ message: errorMessage });
 };
 
-// Function to approve a student
+// Function to approve a student and enroll them in the appropriate class
 exports.approveStudent = async (req, res) => {
     try {
         const studentId = req.params.id;
-        const updatedStudent = await updateStudentStatus(studentId, 'approved', 'Student is already approved');
+        
+        // Update student status to "approved"
+        const updatedStudent = await StudentDetails.findByIdAndUpdate(studentId, { status: 'approved' }, { new: true });
+        if (!updatedStudent) {
+            return res.status(404).json({ message: 'Student not found' });
+        }
+
+        // Retrieve the department of the student
+        const department = await Department.findOne({ departmentName: updatedStudent.department });
+        if (!department) {
+            return res.status(404).json({ message: 'Department not found' });
+        }
+
+        // Find the class for the corresponding department and year
+        const studentClass = await Class.findOne({ department: department._id, year: updatedStudent.year });
+        if (!studentClass) {
+            return res.status(404).json({ message: 'Class not found for the student' });
+        }
+
+        // Check if the class is full before enrolling the student
+        if (studentClass.enrolledStudents.length >= 70) {
+            return res.status(400).json({ message: 'Class is already full' });
+        }
+
+        // Enroll the student in the class
+        studentClass.enrolledStudents.push(updatedStudent._id);
+        await studentClass.save();
+
+        // Send approval email
         sendApprovalRejectionEmail(req, res, updatedStudent, 'approved', 'Student Approval', 'Your student account has been approved.');
     } catch (err) {
         handleError(res, err, "Error approving student");

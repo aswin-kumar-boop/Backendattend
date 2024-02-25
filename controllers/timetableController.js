@@ -2,31 +2,33 @@
 const mongoose = require('mongoose');
 const Class = require('../models/Class'); // Assuming you have a Class model
 const Timetable = require('../models/Timetable'); // Assuming you have a Timetable model
+const Department = require('../models/Department'); 
 const globalSettings = require('../config/globalSettings');
 
 // Function to add a Class and then use its ID in a Timetable with duration validation
 exports.addClassWithTimetable = async (req, res) => {
   try {
-    // Extract class details from request
-    const { className, classCode, instructor, room } = req.body.classDetails;
-    const { semester, year, sessions, startDate, endDate } = req.body.timetableDetails;
+    const { className, classCode, instructor, room, departmentName, year } = req.body.classDetails; // Extract departmentName and year
+    const { semester, sessions, startDate, endDate } = req.body.timetableDetails;
 
-    // Check if class already exists to avoid duplicate class codes
     let existingClass = await Class.findOne({ classCode: classCode });
     if (!existingClass) {
-      // If class doesn't exist, create a new one
-      existingClass = new Class({ className, classCode, instructor, room });
+      let department = await Department.findOne({ departmentName, year }); // Check if department already exists
+      if (!department) {
+        department = new Department({ departmentName, year }); // Create new department if not found
+        await department.save();
+      }
+      existingClass = new Class({ className, classCode, instructor, room, department: department._id, departmentName, year }); // Associate department with class
       await existingClass.save();
     }
 
-    // Validation for total session duration in a single day
-    const sessionDays = sessions.map(session => session.day); // Get all session days
-    const uniqueDays = [...new Set(sessionDays)]; // Get unique days
+    const sessionDays = sessions.map(session => session.day);
+    const uniqueDays = [...new Set(sessionDays)];
 
     let durationExceeded = false;
     uniqueDays.forEach(day => {
       const totalDuration = sessions.filter(session => session.day === day)
-                                    .reduce((total, session) => total + (new Date(session.endTime) - new Date(session.startTime)) / (1000 * 60 * 60), 0);
+        .reduce((total, session) => total + (new Date(session.endTime) - new Date(session.startTime)) / (1000 * 60 * 60), 0);
       if (totalDuration > globalSettings.timetable.totalDuration) {
         durationExceeded = true;
       }
@@ -39,7 +41,6 @@ exports.addClassWithTimetable = async (req, res) => {
       });
     }
 
-    // Now create a Timetable with this class
     const timetable = new Timetable({
       semester,
       year,
@@ -51,7 +52,6 @@ exports.addClassWithTimetable = async (req, res) => {
 
     await timetable.save();
 
-    // Populate the 'classId' to return the class details along with the timetable
     await timetable.populate('classId', 'className classCode instructor room');
 
     res.status(201).json({

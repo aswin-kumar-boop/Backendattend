@@ -5,7 +5,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
-const cron = require('node-cron'); // Import node-cron
+const cron = require('node-cron');
 
 // Importing routes
 const userRoutes = require('./routes/users');
@@ -15,6 +15,10 @@ const timetableRoutes = require('./routes/timetableRoutes');
 const apiRoutes = require('./routes/api');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const settingsRouter = require('./routes/settings'); // Adjust the path as necessary
+
+// Importing controllers and utilities
+const attendanceController = require('./controllers/attendanceController');
+const performPeriodicCheck = require('./controllers/attendanceController').performPeriodicCheck;
 
 const app = express();
 const server = http.createServer(app);
@@ -39,12 +43,25 @@ mongoose.connect(process.env.MONGO_URI, {
 .then(() => {
   console.log('MongoDB Connected');
 
-  // Schedule a task to run once a day at midnight to remove unverified users
+  // Schedule the performPeriodicCheck function to run once a day at midnight
   cron.schedule('0 0 * * *', async () => {
-    const threshold = new Date(new Date() - 24 * 60 * 60 * 1000); // 24 hours ago
-    const User = require("../models/user"); // Ensure you have the correct path to your User model
-    await User.deleteMany({ isVerified: false, createdAt: { $lt: threshold } });
-    console.log('Expired unverified users removed.');
+    try {
+      console.log('Running daily periodic check...');
+      await performPeriodicCheck();
+    } catch (error) {
+      console.error('Error performing daily periodic check:', error);
+    }
+  });
+
+  // Schedule a task to run once a day at midnight to remove expired unverified users
+  cron.schedule('0 0 * * *', async () => {
+    try {
+      const threshold = new Date(new Date() - 24 * 60 * 60 * 1000); // 24 hours ago
+      await User.deleteMany({ isVerified: false, createdAt: { $lt: threshold } });
+      console.log('Expired unverified users removed.');
+    } catch (error) {
+      console.error('Error removing expired unverified users:', error);
+    }
   });
 })
 .catch(err => console.error('Failed to connect to MongoDB:', err));
@@ -66,6 +83,6 @@ app.use((err, req, res, next) => {
 
 // Start the server with Socket.IO
 const PORT = process.env.PORT || 4000;
-server.listen(PORT,'0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
