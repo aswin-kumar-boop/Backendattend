@@ -12,15 +12,15 @@ const departmentSchema = new mongoose.Schema({
     },
   headOfDepartment: {
     type: String,
-    required: true
+    required: false
   },
   location: {
     type: String,
-    required: true
+    required: false
   },
   contactEmail: {
     type: String,
-    required: true
+    required: false
   },
   // Add more fields as needed
 }, { timestamps: true });

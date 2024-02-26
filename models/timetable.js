@@ -19,6 +19,10 @@ const classSessionSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  subject_instructor: {
+    type: String,
+    required: true,
+  },
   sessionType: {
     type: String,
     enum: ['LECTURE', 'LAB'],
@@ -43,15 +47,9 @@ const timetableSchema = new mongoose.Schema({
     required: true,
   },
   sessions: [classSessionSchema], // Array of class sessions
-  instructor: {
-    type: String, // Example: Name of the instructor
-  },
-  room: {
-    type: String, // Example: Room number
-  },
   startDate: {
     type: Date, // Semester start date
-    required: true,
+    required: true
   },
   endDate: {
     type: Date, // Semester end date

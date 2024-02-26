@@ -5,6 +5,7 @@ const User = require('../models/user');
 const cryptoUtils = require('../helpers/encryption');
 const { sendEmail } = require('../helpers/emailHelper');
 const Department = require('../models/Department');
+const Class = require('../models/Class'); 
 
 // Function to update student details
 exports.updateStudentDetails = async (req, res) => {
@@ -107,52 +108,82 @@ exports.approveStudent = async (req, res) => {
     try {
         const studentId = req.params.id;
         
-        // Update student status to "approved"
-        const updatedStudent = await StudentDetails.findByIdAndUpdate(studentId, { status: 'approved' }, { new: true });
-        if (!updatedStudent) {
+        const existingStudent = await StudentDetails.findById(studentId);
+        if (!existingStudent) {
             return res.status(404).json({ message: 'Student not found' });
         }
 
-        // Retrieve the department of the student
-        const department = await Department.findOne({ departmentName: updatedStudent.department });
+        if (existingStudent.status === 'approved') {
+            return res.status(400).json({ message: 'Student already approved' });
+        }
+
+        // Proceed to update status and enroll in class
+        const updatedStudent = await updateStudentStatus(studentId, 'approved', { new: true });
+
+        const department = await Department.findOne({ departmentName: updatedStudent.departmentName});
         if (!department) {
             return res.status(404).json({ message: 'Department not found' });
         }
 
-        // Find the class for the corresponding department and year
         const studentClass = await Class.findOne({ department: department._id, year: updatedStudent.year });
         if (!studentClass) {
             return res.status(404).json({ message: 'Class not found for the student' });
         }
 
-        // Check if the class is full before enrolling the student
+        if (studentClass.enrolledStudents.find(student => student._id.toString() === updatedStudent._id.toString())) {
+            return res.status(400).json({ message: 'Student already enrolled in this class' });
+        }
+
         if (studentClass.enrolledStudents.length >= 70) {
             return res.status(400).json({ message: 'Class is already full' });
         }
 
-        // Enroll the student in the class
-        studentClass.enrolledStudents.push(updatedStudent._id);
+        studentClass.enrolledStudents.push({
+            _id: updatedStudent._id,
+            studentId: updatedStudent.studentId,
+            name: updatedStudent.name,
+        });
         await studentClass.save();
 
-        // Send approval email
-        sendApprovalRejectionEmail(req, res, updatedStudent, 'approved', 'Student Approval', 'Your student account has been approved.');
+        // Assuming sendApprovalRejectionEmail does not directly send a response
+        await sendApprovalRejectionEmail(req, res, updatedStudent, 'approved', 'Student Approval', 'Your student account has been approved.');
     } catch (err) {
         handleError(res, err, "Error approving student");
     }
 };
 
+
 // Function to reject a student
 exports.rejectStudent = async (req, res) => {
     try {
         const studentId = req.params.id;
-        const updatedStudent = await updateStudentStatus(studentId, 'rejected', 'Student is already rejected');
-        sendApprovalRejectionEmail(req, res, updatedStudent, 'rejected', 'Student Rejection', 'Your student account has been rejected.');
+
+        const existingStudent = await StudentDetails.findById(studentId);
+        if (!existingStudent) {
+            return res.status(404).json({ message: 'Student not found' });
+        }
+
+        if (existingStudent.status === 'rejected') {
+            return res.status(400).json({ message: 'Student already rejected' });
+        }
+
+        const updatedStudent = await updateStudentStatus(studentId, 'rejected', { new: true });
+
+        const classes = await Class.find({ "enrolledStudents._id": updatedStudent._id });
+        for (let studentClass of classes) {
+            studentClass.enrolledStudents = studentClass.enrolledStudents.filter(student => student._id.toString() !== updatedStudent._id.toString());
+            await studentClass.save();
+        }
+
+        // Assuming sendApprovalRejectionEmail does not directly send a response
+        await sendApprovalRejectionEmail(req, res, updatedStudent, 'rejected', 'Student Rejection', 'Your student account has been rejected.');
     } catch (err) {
         handleError(res, err, "Error rejecting student");
     }
 };
 
-// Function to update student status
+
+// Function to update student status, with improved error handling
 const updateStudentStatus = async (studentId, status, errorMessage) => {
     const student = await StudentDetails.findByIdAndUpdate(studentId, { status }, { new: true });
     if (!student) {
@@ -160,6 +191,8 @@ const updateStudentStatus = async (studentId, status, errorMessage) => {
     }
     return student;
 };
+
+
 
 // Function to send approval/rejection email to the student
 const sendApprovalRejectionEmail = async (req, res, student, status, subject, message) => {

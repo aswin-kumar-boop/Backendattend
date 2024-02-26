@@ -43,7 +43,7 @@ const studentDetailsSchema = new mongoose.Schema({
   departmentName: {
     type: String,
     enum: ['Computer Engineering', 'Mechanical Engineering', 'Electrical Engineering', 'Civil Engineering', 'Chemical Engineering', 'Aerospace Engineering', 'Biomedical Engineering', 'Environmental Engineering', 'Industrial Engineering', 'Other'], // Add other engineering departments as needed
-    required: true
+    required: false
   },
   // Field to store the URL or path to the student's photo
   // photoUrl: {

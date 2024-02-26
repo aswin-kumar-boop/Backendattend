@@ -11,8 +11,9 @@ const classSchema = new mongoose.Schema({
     unique: true,
     required: true,
   },
-  instructor: {
+  Class_instructor: {
     type: String,
+    required: true 
   },
   room: {
     type: String,
@@ -32,8 +33,9 @@ const classSchema = new mongoose.Schema({
     required: true 
   },
   enrolledStudents: [{ 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'StudentDetails' 
+    _id: { type: mongoose.Schema.Types.ObjectId, ref: 'StudentDetails' },
+    studentId: { type: String, required: true },
+    name: { type: String, required: true }
   }],
   // Ensure there's a limit to the number of enrolled students
 });
