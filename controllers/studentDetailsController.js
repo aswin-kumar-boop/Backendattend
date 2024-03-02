@@ -10,19 +10,33 @@ const Class = require('../models/Class');
 // Function to update student details
 exports.updateStudentDetails = async (req, res) => {
     const userId = req.user.userId; 
-    const { name, course, year, section, academicLevel, currentSemester, departmentName } = req.body;
-
+    const { name, course, year, section, academicLevel, currentSemester, departmentName, className } = req.body;
+  
     try {
+        // Find the department and class by their names
+        const department = await Department.findOne({ name: departmentName });
+        const classObj = await Class.findOne({ name: className });
+  
+        // Update student details including department and class references
         const studentDetails = await StudentDetails.findOneAndUpdate(
             { user: userId },
-            { name, course, year, section, academicLevel, currentSemester, departmentName },
+            { 
+              name, 
+              course, 
+              year, 
+              section, 
+              academicLevel, 
+              currentSemester, 
+              department: department ? department._id : null,
+              class: classObj ? classObj._id : null
+            },
             { new: true }
-        );
-
+        ).populate('department class');
+  
         if (!studentDetails) {
             return res.status(404).json({ message: "Student details not found for the given user." });
         }
-
+  
         res.json({
             message: "Student details updated successfully",
             data: studentDetails,
@@ -30,7 +44,8 @@ exports.updateStudentDetails = async (req, res) => {
     } catch (err) {
         handleError(res, err, "An unexpected error occurred while updating student details.");
     }
-};
+  };
+  
 
 // Function to update NFC data for a student
 exports.updateNFCData = async (req, res) => {

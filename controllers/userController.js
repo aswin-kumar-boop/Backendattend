@@ -41,6 +41,7 @@ exports.register = async (req, res) => {
       email,
       password: hashedPassword,
       role,
+      department: departmentId, // Assuming the User model has a 'department' field for faculty
       isVerified: false,
     });
 
@@ -76,67 +77,75 @@ async function generateStudentId() {
 }
 
 // OTP Verification Function
+// OTP Verification Function
 exports.verifyOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
-    const user = await User.findOne({
-      email,
-      otp,
-      otpExpires: { $gt: new Date() },
-    });
+      const { email, otp } = req.body;
+      const user = await User.findOne({
+          email,
+          otp,
+          otpExpires: { $gt: new Date() },
+      });
 
-    if (!user) {
-      return res.status(400).json({ message: "Invalid or expired OTP." });
-    }
+      if (!user) {
+          return res.status(400).json({ message: "Invalid or expired OTP." });
+      }
 
-    const studentId = await generateStudentId();
+      let message = "Account verified successfully.";
 
-    const studentDetails = await new StudentDetails({
-      user: user._id,
-      studentId,
-      name: "",
-      course: "",
-      year: 0,
-      section: "",
-      academicLevel: "",
-      currentSemester: "",
-      status: 'pending_approval',
-    }).save();
+      // Check if the user is a student
+      if (user.role === 'student') {
+          const studentId = await generateStudentId();
 
-    const uniqueNfcTagId = `NFC-${user._id}-${Date.now()}`;
-    const uniqueBiometricTemplate = `BIO-${user._id}-${Date.now()}`;
+          const studentDetails = await new StudentDetails({
+              user: user._id,
+              studentId,
+              name: "",
+              course: "",
+              year: 0,
+              section: "",
+              academicLevel: "",
+              currentSemester: "",
+              status: 'pending_approval',
+          }).save();
 
-    const nfcDataInstance = new NFCData({
-      studentob_Id: studentDetails._id,
-      studentId: studentId,
-      tagId: uniqueNfcTagId,
-    });
+          const uniqueNfcTagId = `NFC-${user._id}-${Date.now()}`;
+          const uniqueBiometricTemplate = `BIO-${user._id}-${Date.now()}`;
 
-    await nfcDataInstance.save();
+          const nfcDataInstance = new NFCData({
+              studentob_Id: studentDetails._id,
+              studentId: studentId,
+              tagId: uniqueNfcTagId,
+          });
 
-    const biometricDataInstance = new BiometricData({
-      studentob_Id: studentDetails._id,
-      studentId: studentId,
-      template: uniqueBiometricTemplate,
-    });
+          await nfcDataInstance.save();
 
-    await biometricDataInstance.save();
+          const biometricDataInstance = new BiometricData({
+              studentob_Id: studentDetails._id,
+              studentId: studentId,
+              template: uniqueBiometricTemplate,
+          });
 
-    user.isActive = true;
-    user.isVerified = true;
-    user.otp = undefined;
-    user.otpExpires = undefined;
-    await user.save();
+          await biometricDataInstance.save();
 
-    sendEmail(email, "Your Student ID", `your account verified sucessfully and Your unique student ID is: ${studentId}`);
+          message += ` Your unique student ID is: ${studentId}`;
+      }
 
-    res.status(200).json({
-       success: true,
-       message: "Account verified successfully."
-    });
+      user.isActive = true;
+      user.isVerified = true;
+      user.otp = undefined;
+      user.otpExpires = undefined;
+      await user.save();
+
+      sendEmail(email, "Your Account Verification", message);
+
+      res.status(200).json({
+          success: true,
+          message: message
+      });
   } catch (err) {
-    console.error("Error verifying OTP:", err);
-    res.status(500).json({ message: "Error verifying OTP." });
+      console.error("Error verifying OTP:", err);
+      res.status(500).json({ message: "Error verifying OTP." });
   }
 };
 
@@ -162,6 +171,7 @@ exports.regenerateotp = async (req, res) => {
 };
 
 // Login function
+// Login function
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -185,13 +195,16 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: "Authentication failed. Wrong password." });
     }
 
+    // Fetch department and year information based on the user's role
+    const { departmentName, year } = await fetchDepartmentAndYear(email);
+
     const otp = user.generateOtp();
     await user.save();
 
     sendEmail(user.email, "Your OTP", `Your OTP is: ${otp}. It expires in 10 minutes.`);
 
     const tempToken = jwt.sign(
-      { userId: user._id, preVerification: true },
+      { userId: user._id, preVerification: true, departmentName, year },
       jwtSecret,
       { expiresIn: "10m" }
     );
@@ -199,12 +212,31 @@ exports.login = async (req, res) => {
     res.json({
       message: "OTP has been sent to your email.",
       tempToken: tempToken,
+      departmentName,
+      year
     });
   } catch (err) {
     console.error("Error during login:", err);
     res.status(500).json({ message: "Error during login." });
   }
 };
+
+const fetchDepartmentAndYear = async (email) => {
+  try {
+    // Assuming you have a User model that contains departmentName and year fields
+    const user = await User.findOne({ email }).select("departmentName year");
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const { departmentName, year } = user;
+    return { departmentName, year };
+  } catch (error) {
+    console.error("Error fetching department and year:", error);
+    throw error;
+  }
+};
+
 
 
 // OTP verification after login

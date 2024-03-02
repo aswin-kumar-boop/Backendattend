@@ -9,8 +9,6 @@ const globalSettings = require('../config/globalSettings');
 const cron = require('node-cron');
 const cryptoUtils = require('../helpers/encryption');
 
-
-
 // Validate NFC data
 async function validateNFC(nfcTagId, studentId) {
   if (!nfcTagId) return true;

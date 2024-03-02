@@ -12,7 +12,8 @@ const classSchema = new mongoose.Schema({
     required: true,
   },
   Class_instructor: {
-    type: String,
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', // Updated to reference the User model for instructors
     required: true 
   },
   room: {
@@ -25,7 +26,7 @@ const classSchema = new mongoose.Schema({
   },
   departmentName: {
     type: String,
-    enum: ['Computer Engineering', 'Mechanical Engineering', 'Electrical Engineering', 'Civil Engineering', 'Chemical Engineering', 'Aerospace Engineering', 'Biomedical Engineering', 'Environmental Engineering', 'Industrial Engineering', 'Other'], // Add other engineering departments as needed
+    enum: ['Computer Engineering', 'Mechanical Engineering', 'Electrical Engineering', 'Civil Engineering', 'Chemical Engineering', 'Aerospace Engineering', 'Biomedical Engineering', 'Environmental Engineering', 'Industrial Engineering', 'Other'],
     required: true
   },
   year: { 
@@ -37,7 +38,6 @@ const classSchema = new mongoose.Schema({
     studentId: { type: String, required: true },
     name: { type: String, required: true }
   }],
-  // Ensure there's a limit to the number of enrolled students
 });
 
 // Virtual property to check if the class is full

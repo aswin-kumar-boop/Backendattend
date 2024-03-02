@@ -4,7 +4,7 @@ const studentDetailsSchema = new mongoose.Schema({
   user: { 
     type: mongoose.Schema.Types.ObjectId, 
     required: true,
-    ref: 'User' 
+    ref: 'User'
   },
   studentId: {
     type: String,
@@ -33,7 +33,7 @@ const studentDetailsSchema = new mongoose.Schema({
   },
   currentSemester: {
     type: String,
-    required: false // Adjust based on whether this field is mandatory
+    required: false
   },
   status: {
     type: String,
@@ -42,15 +42,19 @@ const studentDetailsSchema = new mongoose.Schema({
   },
   departmentName: {
     type: String,
-    enum: ['Computer Engineering', 'Mechanical Engineering', 'Electrical Engineering', 'Civil Engineering', 'Chemical Engineering', 'Aerospace Engineering', 'Biomedical Engineering', 'Environmental Engineering', 'Industrial Engineering', 'Other'], // Add other engineering departments as needed
+    enum: ['Computer Engineering', 'Mechanical Engineering', 'Electrical Engineering', 'Civil Engineering', 'Chemical Engineering', 'Aerospace Engineering', 'Biomedical Engineering', 'Environmental Engineering', 'Industrial Engineering', 'Other'],
     required: false
   },
-  // Field to store the URL or path to the student's photo
-  // photoUrl: {
-  //   type: String,
-  //   required: false // Set to true if you require a photo for each student
-  // },
-  // You can add more fields as needed
+  department: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Department',
+    required: false // Adjust based on your requirement
+  },
+  class: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Class',
+    required: false // Adjust based on your requirement
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('StudentDetails', studentDetailsSchema);

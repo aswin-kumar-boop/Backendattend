@@ -199,15 +199,29 @@ exports.deleteSession = async (req, res) => {
 
 exports.getWeeklyTimetable = async (req, res) => {
   try {
-    const { classId } = req.params;
+    const { departmentId, academicYear } = req.query; // Assuming these are passed as query parameters
 
-    const timetables = await Timetable.find({ classId: classId }).populate({
+    // First, find classes in the specified department and academic year
+    const classes = await Class.find({
+      department: departmentId,
+      year: academicYear
+    }, '_id'); // Only fetch class IDs
+
+    if (!classes.length) {
+      return res.status(404).json({ status: 'error', message: 'No classes found for the specified department and academic year.' });
+    }
+
+    // Convert class documents to an array of their IDs
+    const classIds = classes.map(cls => cls._id);
+
+    // Then, find timetables for these classes
+    const timetables = await Timetable.find({ classId: { $in: classIds } }).populate({
       path: 'sessions',
       match: { day: { $in: ['MON', 'TUE', 'WED', 'THU', 'FRI'] } },
     });
 
     if (!timetables.length) {
-      return res.status(404).json({ status: 'error', message: 'Timetable not found' });
+      return res.status(404).json({ status: 'error', message: 'Timetable not found for the specified classes.' });
     }
 
     // Construct a weekly timetable
@@ -229,4 +243,5 @@ exports.getWeeklyTimetable = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Server error' });
   }
 };
+
 
