@@ -40,8 +40,7 @@ exports.register = async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      role,
-      department: departmentId, // Assuming the User model has a 'department' field for faculty
+      role,// Assuming the User model has a 'department' field for faculty
       isVerified: false,
     });
 
