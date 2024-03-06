@@ -12,9 +12,8 @@ const classSchema = new mongoose.Schema({
     required: true,
   },
   Class_instructor: {
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', // Updated to reference the User model for instructors
-    required: true 
+    type: String,
+    required: true,
   },
   room: {
     type: String,
