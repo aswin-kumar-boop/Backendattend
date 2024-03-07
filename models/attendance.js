@@ -1,10 +1,9 @@
 const mongoose = require('mongoose');
 
-// Define the Attendance schema
 const attendanceSchema = new mongoose.Schema({
   studentId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'StudentDetails', // Reference to the student details model
+    ref: 'StudentDetails',
     required: true
   },
   date: {
@@ -13,39 +12,24 @@ const attendanceSchema = new mongoose.Schema({
   },
   checkIns: [
     {
-      time: {
-        type: Date,
-        required: true
-      },
-      status: {
-        type: String,
-        enum: ['OnTime', 'Late', 'VeryLate', 'Too Early'], // Include 'Too Early' in the enum
-        required: true
-      }
+      time: { type: Date, required: true },
+      status: { type: String, enum: ['OnTime', 'Late', 'VeryLate', 'Too Early'], required: true },
+      notes: { type: String, required: false } // Optional field for notes
     }
   ],
   checkOuts: [
     {
-      time: {
-        type: Date,
-        required: true
-      },
+      time: { type: Date, required: true },
       nfcTagId: String,
       biometricData: String,
-      classDurationHours: Number
+      classDurationHours: Number,
+      sessionStatus: { type: String, enum: ['Completed', 'LeftEarly'], default: 'Completed' } // New field to capture session completion status
     }
   ],
   absences: [
     {
-      sessionId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Timetable',
-        required: true
-      },
-      time: {
-        type: Date,
-        required: true
-      }
+      sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Timetable', required: true },
+      time: { type: Date, required: true }
     }
   ],
   status: {
@@ -53,14 +37,10 @@ const attendanceSchema = new mongoose.Schema({
     enum: ['Present', 'Late', 'Too Early', 'Absent', 'Irregular'],
     default: 'Absent'
   },
-  exceptionalCircumstances: Boolean,
-  exceptionDuration: {
-    type: Number,
-    default: 1
-  }
+  exceptionalCircumstances: { type: Boolean, default: false },
+  exceptionDuration: { type: Number, default: 1 } // Represents the duration of the exception in days
 });
 
-// Create the Attendance model
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 
 module.exports = Attendance;

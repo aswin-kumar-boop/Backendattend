@@ -69,19 +69,58 @@ async function recordAttendance(studentId, sessionId, date, status) {
 
 
 // Find the current or next available session for check-in
+// Find the current or next available session for check-in
 async function findSessionForCheckIn(studentId, timestamp) {
   const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
   const now = timestamp.getHours() * 60 + timestamp.getMinutes();
-  const sessions = await Timetable.aggregate([
-      { $match: { 'sessions.day': dayOfWeek } },
-      { $unwind: '$sessions' },
-      { $match: { 'sessions.day': dayOfWeek, 'sessions.startTime': { $gte: new Date(timestamp.toISOString()) } } },
-      { $sort: { 'sessions.startTime': 1 } },
-      { $limit: 1 }
-  ]);
 
-  return sessions[0];
+  console.log('Timestamp:', timestamp);
+  console.log('Day of week:', dayOfWeek);
+  console.log('Current time in minutes:', now);
+
+  const timetable = await Timetable.findOne({
+    'sessions.day': dayOfWeek,
+  });
+
+  console.log('Timetable:', timetable);
+
+  if (!timetable) {
+    return null; // No matching timetable found
+  }
+
+  // Filter sessions based on the current time
+  const session = timetable.sessions.find(timetableSession => {
+    const sessionStartTime = new Date(timetableSession.startTime).getHours() * 60 + new Date(timetableSession.startTime).getMinutes();
+    const sessionEndTime = new Date(timetableSession.endTime).getHours() * 60 + new Date(timetableSession.endTime).getMinutes();
+
+    return (
+      timetableSession.day === dayOfWeek &&
+      sessionStartTime <= now &&
+      sessionEndTime >= now
+    );
+  });
+
+  console.log('Session:', session);
+
+  if (!session) {
+    return null; // No available session for check-in
+  }
+
+  // Ensure the session is present in the timetable
+  const timetableSession = await Timetable.findOne({
+    _id: timetable._id,
+    'sessions._id': session._id,
+  });
+
+  console.log('Timetable Session:', timetableSession);
+
+  if (!timetableSession) {
+    return null; // Session not found in the timetable
+  }
+
+  return session;
 }
+
 
 // Main check-in function
 exports.checkIn = async (req, res) => {
@@ -112,10 +151,6 @@ exports.checkIn = async (req, res) => {
       'sessions.startTime': session.startTime,
       'sessions.endTime': session.endTime,
     });
-    if (!timetableSession) {
-      return res.status(404).json({ message: 'Session not found in the timetable.' });
-    }
-
     // Determine attendance status and record attendance
     const attendanceStatus = determineAttendanceStatus(session.startTime, timestamp);
     const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
@@ -129,102 +164,131 @@ exports.checkIn = async (req, res) => {
 };
 
 
-
 // Function to handle student check-out
 exports.checkOut = async (req, res) => {
   const { studentId, nfcTagId, biometricData } = req.body;
-    const timestamp = new Date();
+  const timestamp = new Date();
 
-    try {
-        const student = await StudentDetails.findById(studentId);
-        if (!student) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
+  try {
+      const student = await StudentDetails.findById(studentId);
+      if (!student) {
+          return res.status(404).json({ message: 'Student not found' });
+      }
 
-        const isValidNFC = await validateNFC(nfcTagId, student._id);
-        const isValidBiometric = await validateBiometric(biometricData, student._id);
-        if (!isValidNFC || !isValidBiometric) {
-            return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
-        }
+      const isValidNFC = await validateNFC(nfcTagId, student._id);
+      const isValidBiometric = await validateBiometric(biometricData, student._id);
+      if (!isValidNFC || !isValidBiometric) {
+          return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
+      }
 
-        // Assuming a function to find the current session based on the timestamp
-        // This could be similar to `findSessionForCheckIn` but tailored for checkout
-        const session = await findCurrentSessionForCheckout(student._id, timestamp);
-        if (!session) {
-            return res.status(404).json({ message: 'No active session found for checkout.' });
-        }
+      // Find the current session for checkout
+      const session = await findCurrentSessionForCheckout(student._id, timestamp);
+      if (!session) {
+          return res.status(404).json({ message: 'No active session found for checkout.' });
+      }
 
-        // Update the attendance record to reflect the checkout
-        // This could involve setting a checkout time or updating the status
-        const updatedAttendance = await recordCheckout(studentId, session.sessions._id, timestamp);
-        
-        res.status(200).json({ message: 'Checkout successful', session: session.sessions, attendance: updatedAttendance });
-    } catch (err) {
-        console.error('Error during checkout:', err);
-        res.status(500).json({ message: 'Server error', error: err.message });
-    }
+      // Record checkout
+      const updatedAttendance = await recordCheckout(studentId, session._id, timestamp);
+      
+      if (updatedAttendance) {
+          res.status(200).json({ message: 'Checkout successful', session: session, attendance: updatedAttendance });
+      } else {
+          res.status(404).json({ message: 'Checkout failed. Attendance record not found.' });
+      }
+  } catch (err) {
+      console.error('Error during checkout:', err);
+      res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// Assuming recordCheckout is implemented as previously discussed, with corrections
+async function recordCheckout(studentId, sessionId, timestamp) {
+  try {
+      const normalizedDate = new Date(timestamp);
+      normalizedDate.setHours(0, 0, 0, 0); // Normalize the date to the start of the day
+
+      // Find the attendance record for the given student and date or create a new one if it doesn't exist
+      let attendance = await Attendance.findOne({
+          studentId: studentId,
+          date: normalizedDate,
+      });
+
+      if (!attendance) {
+          // Create a new attendance record if one doesn't exist for the date
+          attendance = new Attendance({
+              studentId: studentId,
+              date: normalizedDate,
+              // Initialize other fields as necessary
+          });
+      }
+
+      // Add a new checkout record
+      attendance.checkOuts.push({
+          time: new Date(timestamp), // Ensure this is a Date object representing the checkout time
+          // Populate other fields as necessary, such as nfcTagId, biometricData, etc.
+      });
+
+      // Save the updated attendance record
+      await attendance.save();
+
+      return attendance;
+  } catch (error) {
+      console.error('Error recording checkout:', error);
+      throw error;
+  }
 }
+
+
+
 
 async function findCurrentSessionForCheckout(studentId, timestamp) {
   const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
-  const currentSessions = await Timetable.aggregate([
-      { $match: { 'sessions.day': dayOfWeek } },
-      { $unwind: '$sessions' },
-      { $match: {
-          'sessions.startTime': { $lte: new Date(timestamp) },
-          'sessions.endTime': { $gte: new Date(timestamp) }
-      }},
-      { $sort: { 'sessions.endTime': -1 } },
-      { $limit: 1 }
-  ]);
+  const now = timestamp.getHours() * 60 + timestamp.getMinutes();
 
-  return currentSessions.length > 0 ? currentSessions[0] : null;
-}
+  console.log('Timestamp:', timestamp);
+  console.log('Day of week:', dayOfWeek);
+  console.log('Current time in minutes:', now);
 
-async function recordCheckout(studentId, sessionId, timestamp) {
-  const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date to the start of the day
-  const attendance = await Attendance.findOne({
-      studentId: mongoose.Types.ObjectId(studentId),
-      sessionId: mongoose.Types.ObjectId(sessionId),
-      date: date
+  // Fetch the timetable for the given studentId. You might need additional logic to determine the correct timetable
+  // For simplicity, the example directly queries the Timetable collection without considering the specific classId or studentId
+  const timetable = await Timetable.findOne({
+      'sessions.day': dayOfWeek,
   });
 
-  if (!attendance) {
-      console.log('No attendance record found for checkout.');
-      return null; // Adjust based on your application's needs
+  console.log('Timetable:', timetable);
+
+  if (!timetable) {
+      console.log('No matching timetable found');
+      return null; // No matching timetable found
   }
 
-  const session = await Timetable.findById(sessionId);
-  if (!session) {
-      console.log('Session not found.');
-      return null; // Adjust based on your application's needs
+  // Filter sessions to find the current or most recent session for the day
+  let currentOrRecentSession = null;
+  let minTimeDifference = Infinity;
+
+  timetable.sessions.forEach(session => {
+      const sessionStartTime = new Date(session.startTime).getHours() * 60 + new Date(session.startTime).getMinutes();
+      const sessionEndTime = new Date(session.endTime).getHours() * 60 + new Date(session.endTime).getMinutes();
+
+      // Check if the session is currently active or find the most recent session
+      if (sessionStartTime <= now && sessionEndTime >= now) {
+          currentOrRecentSession = session;
+      } else if (now - sessionEndTime < minTimeDifference && now - sessionEndTime > 0) {
+          // This checks for the most recent session before the current time
+          minTimeDifference = now - sessionEndTime;
+          currentOrRecentSession = session;
+      }
+  });
+
+  if (!currentOrRecentSession) {
+      console.log('No current or recent session found for checkout.');
+      return null;
   }
 
-  const sessionDuration = (new Date(session.endTime) - new Date(session.startTime)) / (1000 * 60 * 60);
-  const minimumRequiredDuration = sessionDuration <= 2 ? sessionDuration - 0.25 : sessionDuration - 0.75;
-
-  const lastCheckIn = attendance.checkIns[attendance.checkIns.length - 1];
-  const checkInTime = new Date(lastCheckIn.time);
-  const checkoutTime = new Date(timestamp);
-  const attendedDurationHours = (checkoutTime - checkInTime) / (1000 * 60 * 60);
-
-  if (attendedDurationHours >= minimumRequiredDuration) {
-      // Update the attendance record with checkout information
-      attendance.checkOuts.push({
-          time: checkoutTime,
-          classDurationHours: attendedDurationHours
-      });
-
-      // Update status based on attended duration
-      attendance.status = 'Present';
-  } else {
-      // Handle scenarios where attended duration is less than required
-      attendance.status = 'Incomplete';
-  }
-
-  await attendance.save();
-  return attendance;
+  console.log('Current or Recent Session:', currentOrRecentSession);
+  return currentOrRecentSession;
 }
+
 
 
 // Function to perform periodic checks and update attendance records
