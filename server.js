@@ -21,13 +21,6 @@ const attendanceController = require('./controllers/attendanceController');
 const performPeriodicCheck = require('./controllers/attendanceController').performPeriodicCheck;
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*", // Adjust this to match your front-end URL for security
-    methods: ["GET", "POST", "PUT"],
-  },
-});
 
 // Middleware setup
 app.use(cors());
