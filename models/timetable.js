@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const classSessionSchema = new mongoose.Schema({
   day: {
     type: String,
-    enum: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+    enum: ['MON', 'TUE', 'WED', 'THU', 'FRI','SAT','SUN'],
     required: true,
   },
   startTime: {

@@ -27,15 +27,37 @@ async function validateBiometric(biometricData, studentId) {
 
 // Determine the attendance status based on check-in time and session start time
 function determineAttendanceStatus(sessionStartTime, timestamp) {
-  const gracePeriodEndTime = new Date(sessionStartTime.getTime() + globalSettings.attendance.gracePeriodMinutes * 60000);
-  const checkInWindowStartTime = new Date(sessionStartTime.getTime() - globalSettings.attendance.checkInWindowMinutes * 60000);
+  // Convert session start time and timestamp to Date objects if they're not already
+  if (!(sessionStartTime instanceof Date)) {
+    sessionStartTime = new Date(sessionStartTime);
+  }
+  if (!(timestamp instanceof Date)) {
+    timestamp = new Date(timestamp);
+  }
 
-  if (timestamp < checkInWindowStartTime) {
-      return 'Too Early';
-  } else if (timestamp <= gracePeriodEndTime) {
-      return 'On Time';
+  // Extract hours and minutes to compare times only
+  const sessionStartHours = sessionStartTime.getUTCHours();
+  const sessionStartMinutes = sessionStartTime.getUTCMinutes();
+  const timestampHours = timestamp.getUTCHours();
+  const timestampMinutes = timestamp.getUTCMinutes();
+
+  // Convert hours and minutes to minutes for comparison
+  const sessionStartTotalMinutes = sessionStartHours * 60 + sessionStartMinutes;
+  const timestampTotalMinutes = timestampHours * 60 + timestampMinutes;
+
+  // Define the check-in window in minutes (15 minutes before and after session starts)
+  const earlyCheckInStart = sessionStartTotalMinutes - 15;
+  const onTimeCheckInEnd = sessionStartTotalMinutes + 15;
+
+  // Determine attendance status based on time comparison
+  if (timestampTotalMinutes < earlyCheckInStart) {
+    return 'Too Early'; // More than 15 minutes before session starts
+  } else if (timestampTotalMinutes >= earlyCheckInStart && timestampTotalMinutes <= sessionStartTotalMinutes) {
+    return 'Early'; // Within 15 minutes before session start, inclusive
+  } else if (timestampTotalMinutes > sessionStartTotalMinutes && timestampTotalMinutes <= onTimeCheckInEnd) {
+    return 'On Time'; // From session start time to 15 minutes after
   } else {
-      return 'Late';
+    return 'Late'; // After the on-time window
   }
 }
 
@@ -51,6 +73,14 @@ async function recordAttendance(studentId, sessionId, date, status) {
       date: date,
       // Initialize the arrays as needed; for example, add a session to absences if marking an absence
     });
+  }else {
+    // Check if the session has already been checked in
+    const sessionCheckInIndex = attendance.checkIns.findIndex(checkIn => checkIn.sessionId.toString() === sessionId.toString());
+
+    if (sessionCheckInIndex !== -1) {
+      // Session already checked in, do not allow another check-in
+      throw new Error('Already checked in for this session.');
+    }
   }
 
   // Based on your logic, update the attendance record
@@ -67,8 +97,6 @@ async function recordAttendance(studentId, sessionId, date, status) {
   return attendance;
 }
 
-
-// Find the current or next available session for check-in
 // Find the current or next available session for check-in
 async function findSessionForCheckIn(studentId, timestamp) {
   const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
@@ -88,22 +116,25 @@ async function findSessionForCheckIn(studentId, timestamp) {
     return null; // No matching timetable found
   }
 
-  // Filter sessions based on the current time
-  const session = timetable.sessions.find(timetableSession => {
-    const sessionStartTime = new Date(timetableSession.startTime).getHours() * 60 + new Date(timetableSession.startTime).getMinutes();
-    const sessionEndTime = new Date(timetableSession.endTime).getHours() * 60 + new Date(timetableSession.endTime).getMinutes();
+  // Adjusted to filter sessions based on the current time and allow check-in 15 minutes before session start
+  const session = timetable.sessions.find(session => {
+    const sessionStartTime = new Date(session.startTime).getHours() * 60 + new Date(session.startTime).getMinutes();
+    const sessionEndTime = new Date(session.endTime).getHours() * 60 + new Date(session.endTime).getMinutes();
+    const earlyCheckInStartTime = sessionStartTime - 20; // Allow check-in 20 minutes before the session starts
+    const checkInEndTime = sessionStartTime + 20; // Allow check-in until 20 minutes after the session starts
 
     return (
-      timetableSession.day === dayOfWeek &&
-      sessionStartTime <= now &&
-      sessionEndTime >= now
+      session.day === dayOfWeek &&
+      now >= earlyCheckInStartTime && // Check-in time is within 15 minutes before session start
+      now <= checkInEndTime && // Check-in time is within 15 minutes of session start
+      sessionEndTime >= now // Current time is before the session end time
     );
   });
 
   console.log('Session:', session);
 
   if (!session) {
-    return null; // No available session for check-in
+    return null; // No available session for check-in or it's too late to check in
   }
 
   // Ensure the session is present in the timetable
@@ -120,7 +151,6 @@ async function findSessionForCheckIn(studentId, timestamp) {
 
   return session;
 }
-
 
 // Main check-in function
 exports.checkIn = async (req, res) => {
@@ -163,132 +193,173 @@ exports.checkIn = async (req, res) => {
   }
 };
 
-
-// Function to handle student check-out
+// Main checkout function
 exports.checkOut = async (req, res) => {
   const { studentId, nfcTagId, biometricData } = req.body;
-  const timestamp = new Date();
+  const timestamp = new Date(); // Ensure timestamp is defined for this scope
 
   try {
-      const student = await StudentDetails.findById(studentId);
-      if (!student) {
-          return res.status(404).json({ message: 'Student not found' });
-      }
+    const student = await StudentDetails.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
 
-      const isValidNFC = await validateNFC(nfcTagId, student._id);
-      const isValidBiometric = await validateBiometric(biometricData, student._id);
-      if (!isValidNFC || !isValidBiometric) {
-          return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
-      }
+    const isValidNFC = await validateNFC(nfcTagId, student._id);
+    const isValidBiometric = await validateBiometric(biometricData, student._id);
+    if (!isValidNFC || !isValidBiometric) {
+      return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
+    }
 
-      // Find the current session for checkout
-      const session = await findCurrentSessionForCheckout(student._id, timestamp);
-      if (!session) {
-          return res.status(404).json({ message: 'No active session found for checkout.' });
-      }
+    const session = await findSessionForCheckout(student._id, timestamp);
+    if (!session) {
+      return res.status(404).json({ message: 'No session available for checkout at this time.' });
+    }
 
-      // Record checkout
-      const updatedAttendance = await recordCheckout(studentId, session._id, timestamp);
-      
-      if (updatedAttendance) {
-          res.status(200).json({ message: 'Checkout successful', session: session, attendance: updatedAttendance });
-      } else {
-          res.status(404).json({ message: 'Checkout failed. Attendance record not found.' });
-      }
+    const checkoutStatus = determineCheckoutStatus(session.endTime, timestamp);
+    const date = timestamp.setHours(0, 0, 0, 0); // Normalize the date
+    const attendanceRecord = await recordCheckout(studentId, session._id, date, checkoutStatus, nfcTagId, biometricData, timestamp);
+
+    res.status(200).json({ message: 'Checkout successful', session: session, attendance: attendanceRecord });
   } catch (err) {
-      console.error('Error during checkout:', err);
-      res.status(500).json({ message: 'Server error', error: err.message });
+    console.error('Error during checkout:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
-// Assuming recordCheckout is implemented as previously discussed, with corrections
-async function recordCheckout(studentId, sessionId, timestamp) {
-  try {
-      const normalizedDate = new Date(timestamp);
-      normalizedDate.setHours(0, 0, 0, 0); // Normalize the date to the start of the day
-
-      // Find the attendance record for the given student and date or create a new one if it doesn't exist
-      let attendance = await Attendance.findOne({
-          studentId: studentId,
-          date: normalizedDate,
-      });
-
-      if (!attendance) {
-          // Create a new attendance record if one doesn't exist for the date
-          attendance = new Attendance({
-              studentId: studentId,
-              date: normalizedDate,
-              // Initialize other fields as necessary
-          });
-      }
-
-      // Add a new checkout record
-      attendance.checkOuts.push({
-          time: new Date(timestamp), // Ensure this is a Date object representing the checkout time
-          // Populate other fields as necessary, such as nfcTagId, biometricData, etc.
-      });
-
-      // Save the updated attendance record
-      await attendance.save();
-
-      return attendance;
-  } catch (error) {
-      console.error('Error recording checkout:', error);
-      throw error;
-  }
-}
-
-
-
-
-async function findCurrentSessionForCheckout(studentId, timestamp) {
+async function findSessionForCheckout(studentId, timestamp) {
   const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
   const now = timestamp.getHours() * 60 + timestamp.getMinutes();
 
+  // Added logging statements
   console.log('Timestamp:', timestamp);
   console.log('Day of week:', dayOfWeek);
   console.log('Current time in minutes:', now);
 
-  // Fetch the timetable for the given studentId. You might need additional logic to determine the correct timetable
-  // For simplicity, the example directly queries the Timetable collection without considering the specific classId or studentId
+  // Find the timetable that includes today's date and sessions for the student
   const timetable = await Timetable.findOne({
-      'sessions.day': dayOfWeek,
+    'sessions.day': dayOfWeek,
   });
 
   console.log('Timetable:', timetable);
 
   if (!timetable) {
-      console.log('No matching timetable found');
-      return null; // No matching timetable found
+    return null; // No matching timetable found
   }
 
-  // Filter sessions to find the current or most recent session for the day
-  let currentOrRecentSession = null;
-  let minTimeDifference = Infinity;
+  // Filter sessions to find the most relevant session for checkout
+  const session = timetable.sessions.find(session => {
+    const sessionEndTime = new Date(session.endTime).getHours() * 60 + new Date(session.endTime).getMinutes();
+    const lateCheckoutEndTime = sessionEndTime + 15; // Assuming a 15-minute grace period after session ends
 
-  timetable.sessions.forEach(session => {
-      const sessionStartTime = new Date(session.startTime).getHours() * 60 + new Date(session.startTime).getMinutes();
-      const sessionEndTime = new Date(session.endTime).getHours() * 60 + new Date(session.endTime).getMinutes();
-
-      // Check if the session is currently active or find the most recent session
-      if (sessionStartTime <= now && sessionEndTime >= now) {
-          currentOrRecentSession = session;
-      } else if (now - sessionEndTime < minTimeDifference && now - sessionEndTime > 0) {
-          // This checks for the most recent session before the current time
-          minTimeDifference = now - sessionEndTime;
-          currentOrRecentSession = session;
-      }
+    return (
+      session.day === dayOfWeek &&
+      now <= lateCheckoutEndTime && // Checkout time is within the grace period after the session ends
+      sessionEndTime < now // Ensuring the session has ended
+    );
   });
 
-  if (!currentOrRecentSession) {
-      console.log('No current or recent session found for checkout.');
-      return null;
+  if (!session) {
+    return null; // No suitable session found for checkout
   }
 
-  console.log('Current or Recent Session:', currentOrRecentSession);
-  return currentOrRecentSession;
+  console.log('Session:', session);
+  
+  // Ensure the session is still relevant for the checkout process
+  const relevantSession = await Timetable.findOne({
+    _id: timetable._id,
+    'sessions._id': session._id,
+  });
+
+  console.log('Timetable Session:', relevantSession);
+
+  if (!relevantSession) {
+    return null; // Session not found in the timetable
+  }
+
+  return session; // Return the found session
 }
 
+function determineCheckoutStatus(sessionEndTime, checkoutTime) {
+  // Convert session end time and checkout time to Date objects if they're not already
+  if (!(sessionEndTime instanceof Date)) {
+    sessionEndTime = new Date(sessionEndTime);
+  }
+  if (!(checkoutTime instanceof Date)) {
+    checkoutTime = new Date(checkoutTime);
+  }
+
+  // Extract hours and minutes to compare times only
+  const sessionEndHours = sessionEndTime.getUTCHours();
+  const sessionEndMinutes = sessionEndTime.getUTCMinutes();
+  const checkoutHours = checkoutTime.getUTCHours();
+  const checkoutMinutes = checkoutTime.getUTCMinutes();
+
+  // Convert hours and minutes to minutes for comparison
+  const sessionEndTotalMinutes = sessionEndHours * 60 + sessionEndMinutes;
+  const checkoutTotalMinutes = checkoutHours * 60 + checkoutMinutes;
+
+  // Define the checkout window in minutes (grace period after session ends)
+  const lateCheckoutEnd = sessionEndTotalMinutes + 15; // Example: 15 minutes after session ends
+
+  // Determine checkout status based on time comparison
+  if (checkoutTotalMinutes <= lateCheckoutEnd) {
+    return 'Completed'; // Within grace period after session end
+  } else {
+    return 'LeftEarly'; // After the grace period
+  }
+}
+
+// Record checkout in the database
+async function recordCheckout(studentId, sessionId, date, checkoutStatus, nfcTagId, biometricData, checkoutTime) {
+  // Find the attendance record for the given date
+  let attendance = await Attendance.findOne({ studentId: studentId, date: date });
+
+  if (!attendance) {
+    // If no attendance record exists for this date, it's a logic error since checkout assumes check-in
+    console.error('No attendance record found for checkout. Student ID:', studentId, 'Date:', date);
+    throw new Error('No attendance record found for this date.');
+  }
+
+  // Check if there is already a checkout for the given session ID
+  const alreadyCheckedOut = attendance.checkOuts.some(checkOut => checkOut.sessionId.equals(sessionId));
+  
+  if (alreadyCheckedOut) {
+    console.log('Student has already checked out from this session. Skipping duplicate checkout.');
+    // Optionally, you can update the existing checkout here if needed
+    return attendance; // Return the existing attendance record without changes
+  }
+
+  // Calculate class duration in hours
+  const session = await Timetable.findOne({
+    'sessions._id': sessionId
+  }, {
+    sessions: { $elemMatch: { _id: sessionId } }
+  });
+
+  if (!session) {
+    console.error('Session not found for checkout. Session ID:', sessionId);
+    throw new Error('Session not found.');
+  }
+
+  const sessionStart = new Date(session.sessions[0].startTime);
+  const sessionEnd = new Date(session.sessions[0].endTime);
+  const classDurationHours = (sessionEnd - sessionStart) / (1000 * 60 * 60); // Duration in hours
+
+  // Update the attendance record with checkout details, since no duplicate was found
+  attendance.checkOuts.push({
+    sessionId: sessionId, // Make sure to include this to uniquely identify the session
+    time: checkoutTime,
+    nfcTagId: nfcTagId,
+    biometricData: biometricData,
+    classDurationHours: classDurationHours,
+    sessionStatus: checkoutStatus, // 'Completed' or 'LeftEarly'
+  });
+
+  // Save the updated attendance record
+  await attendance.save();
+
+  return attendance;
+}
 
 
 // Function to perform periodic checks and update attendance records
