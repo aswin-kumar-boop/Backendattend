@@ -62,41 +62,37 @@ function determineAttendanceStatus(sessionStartTime, timestamp) {
 }
 
 // Record attendance in the database
+// Record attendance in the database
 async function recordAttendance(studentId, sessionId, date, status) {
-  // Find the attendance record or create a new one if it doesn't exist
+  // Find or create the attendance record
   let attendance = await Attendance.findOne({ studentId: studentId, date: date });
 
   if (!attendance) {
-    // If no attendance record exists for this date, create a new one
     attendance = new Attendance({
       studentId: studentId,
       date: date,
-      // Initialize the arrays as needed; for example, add a session to absences if marking an absence
     });
-  }else {
+  } else {
     // Check if the session has already been checked in
-    const sessionCheckInIndex = attendance.checkIns.findIndex(checkIn => checkIn.sessionId.toString() === sessionId.toString());
+    const sessionCheckInIndex = attendance.checkIns.findIndex(checkIn => checkIn.sessionId && checkIn.sessionId.toString() === sessionId.toString());
 
     if (sessionCheckInIndex !== -1) {
-      // Session already checked in, do not allow another check-in
+      // If the session is already checked in, throw an error or handle as needed
       throw new Error('Already checked in for this session.');
     }
   }
 
-  // Based on your logic, update the attendance record
-  // This could involve pushing a new check-in record, updating status, etc.
-  // For example:
+  // Assuming sessionId is defined and contains the correct ID for the session
   attendance.checkIns.push({
-    time: new Date(), // Use the actual check-in time
-    status: status, // 'OnTime', 'Late', etc.
+    sessionId: sessionId, // Use the actual session ID variable here
+    time: new Date(),
+    status: status,
   });
 
-  // Save the updated attendance record
   await attendance.save();
 
   return attendance;
 }
-
 // Find the current or next available session for check-in
 async function findSessionForCheckIn(studentId, timestamp) {
   const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
