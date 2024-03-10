@@ -3,6 +3,7 @@ const router = express.Router();
 const studentController = require('../controllers/studentDetailsController');
 const { body } = require('express-validator');
 const middleware = require('../helpers/studentmiddleware');
+const { authenticateToken } = require('../helpers/auth');
 
 // POST: Create a new student's details
 router.post(
@@ -12,17 +13,17 @@ router.post(
         body('name').notEmpty().withMessage('Name is required')
         // Add more validation rules here
     ],
-      studentController.updateStudentDetails
+    authenticateToken ,studentController.updateStudentDetails
 );
 
 // POST: Submit NFC data for a student
-router.post('/students/nfc', studentController.updateNFCData);
+router.post('/students/nfc', authenticateToken ,studentController.updateNFCData);
 
 // POST: Submit biometric data for a student
-router.post('/students/biometric', studentController.updateBiometricData);
+router.post('/students/biometric', authenticateToken ,studentController.updateBiometricData);
 
 // GET: Retrieve a student's details by ID
-router.get('/students/:id', studentController.getStudentDetails);
+router.get('/students/:id', authenticateToken ,studentController.getStudentDetails);
 
 // PUT: Update a student's details by ID
 router.put(

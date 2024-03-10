@@ -190,7 +190,6 @@ exports.checkIn = async (req, res) => {
 };
 
 // Main checkout function
-// Main checkout function
 exports.checkOut = async (req, res) => {
   const { studentId, nfcTagId, biometricData } = req.body;
   const timestamp = new Date(); // Ensure timestamp is defined for this scope
