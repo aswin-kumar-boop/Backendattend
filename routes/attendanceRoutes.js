@@ -11,8 +11,11 @@ router.post('/attendance/check-in', attendanceController.checkIn);
 // Check-out route
 router.post('/attendance/check-out', attendanceController.checkOut);
 
+// Define the route for fetching attendance summary
+router.get('/api/students/:studentId/attendance-summary', attendanceController.getAttendanceSummary);
+
 // Get attendance summary
-//router.get('/attendance/summary', attendanceController.getAttendanceSummary);
+router.get('/attendance/summary', attendanceController.GetAttendanceSummary);
 
 // Calculate monthly attendance
 //router.get('/attendance/monthly', attendanceController.calculateMonthlyAttendance);

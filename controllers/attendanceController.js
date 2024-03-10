@@ -190,6 +190,7 @@ exports.checkIn = async (req, res) => {
 };
 
 // Main checkout function
+// Main checkout function
 exports.checkOut = async (req, res) => {
   const { studentId, nfcTagId, biometricData } = req.body;
   const timestamp = new Date(); // Ensure timestamp is defined for this scope
@@ -214,6 +215,16 @@ exports.checkOut = async (req, res) => {
     const checkoutStatus = determineCheckoutStatus(session.endTime, timestamp);
     const date = timestamp.setHours(0, 0, 0, 0); // Normalize the date
     const attendanceRecord = await recordCheckout(studentId, session._id, date, checkoutStatus, nfcTagId, biometricData, timestamp);
+
+    // Update attendance status based on checkout status
+    if (checkoutStatus === 'Completed') {
+      attendanceRecord.status = 'Present'; // Update status to 'Present' if checkout completed
+    } else {
+      attendanceRecord.status = 'Absent'; // Otherwise, update status to 'Absent'
+    }
+
+    // Save the updated attendance record
+    await attendanceRecord.save();
 
     res.status(200).json({ message: 'Checkout successful', session: session, attendance: attendanceRecord });
   } catch (err) {
@@ -401,8 +412,59 @@ async function performPeriodicCheck() {
 }
 
 
-// Function to get attendance summary
+// Define the endpoint handler function
 exports.getAttendanceSummary = async (req, res) => {
+  try {
+    // Extract parameters from request
+    const { studentId } = req.params;
+
+    // Get the current date
+    const currentDate = new Date();
+    const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+
+    // Query the database for attendance records for the current day
+    const attendanceRecord = await Attendance.findOne({
+      studentId: mongoose.Types.ObjectId(studentId),
+      date: { $gte: today, $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) }, // For the current day
+      status: 'Present' // Consider only present status for the current day
+    });
+
+    // Query the database for total number of hours attended
+    const totalHoursAttended = await Attendance.aggregate([
+      {
+        $match: {
+          studentId: mongoose.Types.ObjectId(studentId),
+          status: 'Present' // Consider only present status
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalHours: { $sum: '$classDurationHours' }
+        }
+      }
+    ]);
+
+    // Calculate total hours attended or default to 0 if no record found
+    const totalHours = totalHoursAttended.length > 0 ? totalHoursAttended[0].totalHours : 0;
+
+    // Prepare the attendance summary
+    const summary = {
+      presentToday: !!attendanceRecord,
+      totalHoursAttended: totalHours
+    };
+
+    // Send the attendance summary as JSON response
+    res.json({ status: 'success', data: summary });
+  } catch (err) {
+    console.error('Error getting attendance summary:', err);
+    res.status(500).json({ status: 'error', message: 'Server error', error: err.message });
+  }
+};
+
+
+// Function to get attendance summary
+exports.GetAttendanceSummary = async (req, res) => {
   try {
     const { classId, startDate, endDate } = req.query;
 
