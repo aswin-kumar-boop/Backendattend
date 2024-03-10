@@ -45,10 +45,6 @@ const userSchema = new Schema({
     type: Date,
     default: null,
   },
-  expiresAt: {
-    type: Date,
-    default: () => Date.now() + 24*60*60*1000, // 24 hours from now
-  },
   resetPasswordToken: {
     type: String,
     default: null,

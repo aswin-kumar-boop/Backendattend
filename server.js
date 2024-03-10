@@ -6,6 +6,8 @@ const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
 const cron = require('node-cron');
+const User = require('./models/user'); // Adjust the path to where your User model is defined
+
 
 // Importing routes
 const userRoutes = require('./routes/users');
@@ -44,25 +46,35 @@ mongoose.connect(process.env.MONGO_URI, {
   console.log('MongoDB Connected');
 
   // Schedule the performPeriodicCheck function to run once a day at midnight
-  cron.schedule('0 0 * * *', async () => {
-    try {
-      console.log('Running daily periodic check...');
-      await performPeriodicCheck();
-    } catch (error) {
-      console.error('Error performing daily periodic check:', error);
-    }
-  });
+  // cron.schedule('0 0 * * *', async () => {
+  //   try {
+  //     console.log('Running daily periodic check...');
+  //     await performPeriodicCheck();
+  //   } catch (error) {
+  //     console.error('Error performing daily periodic check:', error);
+  //   }
+  // });
 
   // Schedule a task to run once a day at midnight to remove expired unverified users
-  cron.schedule('0 0 * * *', async () => {
+  cron.schedule('0 * * * *', async () => { // Runs every hour
     try {
-      const threshold = new Date(new Date() - 24 * 60 * 60 * 1000); // 24 hours ago
-      await User.deleteMany({ isVerified: false, createdAt: { $lt: threshold } });
-      console.log('Expired unverified users removed.');
+      // Setting the threshold to 24 hours ago
+      const threshold = new Date(new Date() - 24 * 60 * 60 * 1000);
+      console.log(`Deleting unverified users older than 24 hours`);
+  
+      // Find users to log them before deletion
+      const usersToDelete = await User.find({ isVerified: false, createdAt: { $lt: threshold } }, '_id');
+      console.log(`Found users to delete (older than 24 hours and unverified): ${usersToDelete.map(user => user._id).join(', ')}`);
+      
+      // Then delete them
+      const deletionResult = await User.deleteMany({ _id: { $in: usersToDelete.map(user => user._id) } });
+      console.log(`Expired unverified users removed. Count: ${deletionResult.deletedCount}`);
     } catch (error) {
       console.error('Error removing expired unverified users:', error);
     }
   });
+  
+
 })
 .catch(err => console.error('Failed to connect to MongoDB:', err));
 
