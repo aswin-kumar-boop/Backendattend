@@ -24,11 +24,11 @@ const userSchema = new Schema({
     type: String,
     enum: ['student', 'faculty', 'admin'],
   },
-  department: { // Optional reference to Department model for faculty
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Department',
-    required: function() { return this.role === 'faculty'; } // Conditionally required if the user is a faculty member
-  },
+  // department: { // Optional reference to Department model for faculty
+  //   type: mongoose.Schema.Types.ObjectId,
+  //   ref: 'Department',
+  //   required: function() { return this.role === 'faculty'; } // Conditionally required if the user is a faculty member
+  // },
   isActive: {
     type: Boolean,
     default: false,
