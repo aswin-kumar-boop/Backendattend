@@ -22,6 +22,7 @@ const settingsRouter = require('./routes/settings'); // Adjust the path as neces
 const attendanceController = require('./controllers/attendanceController');
 const performPeriodicCheck = require('./controllers/attendanceController').performPeriodicCheck;
 
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {

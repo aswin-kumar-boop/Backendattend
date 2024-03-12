@@ -4,17 +4,17 @@ const studentController = require('../controllers/studentDetailsController');
 const { body } = require('express-validator');
 const middleware = require('../helpers/studentmiddleware');
 const { authenticateToken } = require('../helpers/auth');
+//const { AuthMiddleware }  = require('../helpers/authMiddleware')
 
 // POST: Create a new student's details
+// Assuming updateStudentDetails and other functions are defined and exported in studentDetailsController
 router.post(
     '/update-details/:id',
-    [
-        // Validate request body (you can add more validation as needed)
-        body('name').notEmpty().withMessage('Name is required')
-        // Add more validation rules here
-    ],
-    authenticateToken ,studentController.updateStudentDetails
+    [body('name').notEmpty().withMessage('Name is required')],
+    middleware.AuthMiddleware,
+    studentController.updateStudentDetails
 );
+
 
 // POST: Submit NFC data for a student
 router.post('/students/nfc', authenticateToken ,studentController.updateNFCData);
