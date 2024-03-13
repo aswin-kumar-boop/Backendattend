@@ -38,6 +38,33 @@ exports.updateStudentDetails = async (req, res) => {
         if (!studentDetails) {
             return res.status(404).json({ message: "Student details not found for the given user." });
         }
+
+        // Send email notification for student details update
+        const user = await User.findById(userId);
+        if (user) {
+          const emailSubject = "Your Student Details Have Been Updated";
+          const emailBody = `Hello ${name},
+
+            We are pleased to inform you that your student details have been successfully updated in our system. Here are the updated details for your reference:
+
+            - Name: ${name}
+            - Course: ${course}
+            - Year: ${year}
+            - Section: ${section}
+            - Academic Level: ${academicLevel}
+            - Current Semester: ${currentSemester}
+            - Department: ${departmentName}
+            - Class: ${className}
+
+            If any of this information is incorrect or if you have any further changes, please contact our administration office as soon as possible.
+
+            Thank you for keeping your information up to date.
+
+            Best regards,
+            The Bionite Team`;
+
+                sendEmail(user.email, emailSubject, emailBody);
+            }
   
         res.json({
             message: "Student details updated successfully",
@@ -71,6 +98,24 @@ exports.updateNFCData = async (req, res) => {
         if (!updatedNFCData) {
             return res.status(404).json({ message: "NFC data record not found." });
         }
+
+        // Send email notification for NFC data update
+        const user = await User.findById(userId);
+        if (user) {
+          const emailSubject = "NFC Data Update Confirmation";
+          const emailBody = `Dear Student,
+
+          Your NFC data has been successfully updated in our system as of ${new Date().toLocaleDateString()}. Your new NFC tag ID is: ${tagId}.
+
+          Please, keep this information confidential and do not share your NFC tag ID with others. If you experience any issues accessing facilities or services with your NFC tag, please report it to our technical support team immediately.
+
+          Stay safe,
+          The Bionite Team`;
+
+    sendEmail(user.email, emailSubject, emailBody);
+}
+
+
 
         res.status(200).json({
             success: true,
@@ -108,6 +153,26 @@ exports.updateBiometricData = async (req, res) => {
             return res.status(404).json({ message: "Biometric data record not found." });
         }
 
+        // Send email notification for biometric data update
+        const user = await User.findById(userId);
+        if (user) {
+          const emailSubject = "Biometric Data Update Notification";
+          const emailBody = `Hello,
+
+          We are writing to inform you that your biometric data has been updated in our secure system. This update ensures that your identity verification process remains accurate and secure.
+
+          It is part of our continuous effort to enhance security and provide you with safe access to our services.
+
+          If you did not request this update or believe this to be an error, please contact our security department immediately to ensure your data is protected.
+
+          Thank you for your cooperation.
+
+          Best regards,
+          The Bionite Team`;
+
+    sendEmail(user.email, emailSubject, emailBody);
+}
+      
         res.status(200).json({
             success: true,
             message: "Biometric data updated successfully.",

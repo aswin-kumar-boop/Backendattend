@@ -53,8 +53,18 @@ exports.register = async (req, res) => {
     await newUser.save();
     sendEmail(
       email,
-      "Verify your account",
-      `Your verification code is: ${otp}\nThis code expires in 10 minutes.`
+      "Welcome to Bionite Verify Your Account",
+      `Hello ${username},
+    
+      Thank you for registering at Bionite. Before you can start using your account, you need to verify it by entering the OTP below:
+    
+       OTP: ${otp}
+    
+      Please note, the OTP expires in 10 minutes. If you didn't request this, please ignore this email or contact support if you believe this is an error.
+    
+      Best regards,
+      The Bionite Team
+    `
     );
 
     return res.status(201).json({
@@ -383,7 +393,7 @@ exports.LoginVerify = async (req, res) => {
     res.status(500).json({ message: "Error during OTP verification." });
   }
 };
-// Function to get a single user by ID with associated NFC and biometric data
+
 // Function to get a single user by ID with associated NFC and biometric data
 exports.getUserById = async (req, res) => {
   try {
@@ -594,12 +604,26 @@ exports.resetPassword = async (req, res) => {
     user.resetPasswordExpires = undefined;
     await user.save();
 
-    // Send email to user upon successful password reset
-    sendEmail(
-      user.email,
-      "Password Reset Successful",
-      "Your password has been successfully reset."
-    );
+    // Enhanced Password Reset Email Function
+     async function sendPasswordResetEmail(user, resetToken) {
+     const resetUrl = `${clientURL}/reset-password/${resetToken}`;
+     const emailSubject = "Password Reset Request";
+     const emailBody = `Hello ${user.username},
+
+    You are receiving this email because you (or someone else) have requested to reset the password for your account. Please click on the following link, or paste it into your browser to complete the process:
+
+    ${resetUrl}
+
+    This link is valid for 1 hour only.
+
+    If you did not request this, please ignore this email and take steps to secure your account, as your password will remain unchanged.
+
+   Best regards,
+   Bionite`;
+
+  await sendEmail(user.email, emailSubject, emailBody);
+}
+
 
     res.status(200).json({
       message:

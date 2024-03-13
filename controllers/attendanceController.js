@@ -8,6 +8,8 @@ const Timetable = require('../models/Timetable');
 const globalSettings = require('../config/globalSettings');
 const cron = require('node-cron');
 const cryptoUtils = require('../helpers/encryption');
+const { sendEmail } = require('../helpers/emailHelper');
+const User = require("../models/user");
 
 async function validateNFC(nfcTagId) {
   if (!nfcTagId) return null; // Immediately return if no NFC data is provided
@@ -168,7 +170,7 @@ exports.checkIn = async (req, res) => {
 
     // Assuming the validateNFC and validateBiometric return the ObjectId directly
 
-    const student = await StudentDetails.findById(studentId);
+    const student = await StudentDetails.findById(studentId).populate('user');
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
@@ -189,6 +191,33 @@ exports.checkIn = async (req, res) => {
     const attendanceStatus = determineAttendanceStatus(session.startTime, timestamp);
     const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
     const attendanceRecord = await recordAttendance(studentId, session._id, date, attendanceStatus);
+
+
+    // Access the student's User document to get the email
+    const userEmail = student.user.email; // Since 'user' is populated, we can access 'email' directly
+    const studentName = student.name; 
+
+    const sessionDetails = `Session ID: ${session._id}, Session Start Time: ${session.startTime}`;
+    const emailSubject = "Check-in Confirmation";
+    const emailBody = `
+    Hello ${studentName},
+
+    You have successfully checked in for your session. Here are the session details:
+    ${sessionDetails}
+
+    Status: ${attendanceStatus}
+
+    If this was not you, please contact the administration immediately.
+
+    Best regards,
+    The Bionite Team`;
+
+    sendEmail(userEmail, emailSubject, emailBody).then(() => {
+      console.log('Check-in confirmation email sent successfully.');
+    }).catch(err => {
+      console.error('Failed to send check-in confirmation email:', err);
+});
+
 
     res.status(200).json({ message: 'Check-in successful', session: session, attendance: attendanceRecord });
   } catch (err) {
@@ -219,7 +248,7 @@ exports.checkOut = async (req, res) => {
  
      // Assuming the validateNFC and validateBiometric return the ObjectId directly
 
-    const student = await StudentDetails.findById(studentId);
+    const student = await StudentDetails.findById(studentId).populate('user');
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
@@ -243,7 +272,32 @@ exports.checkOut = async (req, res) => {
     // Save the updated attendance record
     await attendanceRecord.save();
 
-    res.status(200).json({ message: 'Checkout successful', session: session, attendance: attendanceRecord });
+    // Access the student's User document to get the email for checkout confirmation
+    const userEmail = student.user.email; // Access email from populated user document
+    const studentName = student.name; 
+
+    const sessionDetails = `Session ID: ${session._id}, Session End Time: ${session.endTime}`;
+    const emailSubject = "Checkout Confirmation";
+    const emailBody = `
+    Hello ${studentName},
+
+    You have successfully checked out from your session. Here are the session details:\n
+    ${sessionDetails}
+
+    Status:\n ${checkoutStatus}
+
+    Thank you for your participation today. If you have any feedback or concerns, please don't hesitate to reach out.
+
+    Best regards,
+    The Bionite Team`;
+
+    sendEmail(userEmail, emailSubject, emailBody).then(() => {
+      console.log('Checkout confirmation email sent successfully.');
+  }).catch(err => {
+      console.error('Failed to send checkout confirmation email:', err);
+});
+res.status(200).json({ message: 'Checkout successful', session: session, attendance: attendanceRecord });
+
   } catch (err) {
     console.error('Error during checkout:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
