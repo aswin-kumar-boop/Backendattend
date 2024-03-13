@@ -17,10 +17,10 @@ router.post(
 
 
 // POST: Submit NFC data for a student
-router.post('/students/nfc', authenticateToken ,studentController.updateNFCData);
+router.post('/students/nfc', middleware.AuthMiddleware ,studentController.updateNFCData);
 
 // POST: Submit biometric data for a student
-router.post('/students/biometric', authenticateToken ,studentController.updateBiometricData);
+router.post('/students/biometric', middleware.AuthMiddlewarev ,studentController.updateBiometricData);
 
 // GET: Retrieve a student's details by ID
 router.get('/students/:id', authenticateToken ,studentController.getStudentDetails);

@@ -6,6 +6,8 @@ const cryptoUtils = require('../helpers/encryption');
 const { sendEmail } = require('../helpers/emailHelper');
 const Department = require('../models/Department');
 const Class = require('../models/Class'); 
+const axios = require('axios');
+const process = require('process');
 
 // Function to update student details
 exports.updateStudentDetails = async (req, res) => {
@@ -50,12 +52,15 @@ exports.updateStudentDetails = async (req, res) => {
 // Function to update NFC data for a student
 exports.updateNFCData = async (req, res) => {
     try {
-        const { studentId, tagId } = req.body;
-        const studentDetails = await StudentDetails.findOne({ studentId });
+        const userId = req.user._id; // Extracted from token by authMiddleware
 
+        const studentDetails = await StudentDetails.findOne({ user: userId });
         if (!studentDetails) {
             return res.status(404).json({ message: "Student details not found." });
         }
+
+        const nfcResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-nfc`);
+        const { tagId } = nfcResponse.data;
 
         const updatedNFCData = await NFCData.findOneAndUpdate(
             { studentob_Id: studentDetails._id },
@@ -63,28 +68,39 @@ exports.updateNFCData = async (req, res) => {
             { new: true }
         );
 
-        handleDataUpdateResponse(res, updatedNFCData, "NFC data");
+        if (!updatedNFCData) {
+            return res.status(404).json({ message: "NFC data record not found." });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "NFC data updated successfully.",
+            data: updatedNFCData
+        });
     } catch (err) {
-        handleError(res, err, "Error updating NFC data.");
+        console.error("Error updating NFC data:", err);
+        res.status(500).json({ message: "Error updating NFC data." });
     }
 };
 
 // Function to update biometric data for a student
 exports.updateBiometricData = async (req, res) => {
     try {
-        const { studentId, template: biometricTemplate } = req.body;
+        const userId = req.user._id; // Using userId from the authenticated user
 
-        // Encrypt the biometric template before storing it
-        const encryptedTemplate = cryptoUtils.encrypt(biometricTemplate);
-
-        const studentDetails = await StudentDetails.findOne({ studentId });
+        const studentDetails = await StudentDetails.findOne({ user: userId });
         if (!studentDetails) {
             return res.status(404).json({ message: "Student details not found." });
         }
 
+        const bioResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-fingerprint`);
+        const { template: biometricTemplate } = bioResponse.data;
+
+        // const encryptedTemplate = cryptoUtils.encrypt(biometricTemplate);
+
         const updatedBiometricData = await BiometricData.findOneAndUpdate(
             { studentob_Id: studentDetails._id },
-            { template: encryptedTemplate }, // Store the encrypted template
+            { template: biometricTemplate },
             { new: true }
         );
 
@@ -95,7 +111,7 @@ exports.updateBiometricData = async (req, res) => {
         res.status(200).json({
             success: true,
             message: "Biometric data updated successfully.",
-            biometricData: updatedBiometricData, // Note: This is encrypted. Decryption needed for use.
+            data: updatedBiometricData
         });
     } catch (err) {
         console.error("Error updating biometric data:", err);
@@ -218,6 +234,8 @@ const sendApprovalRejectionEmail = async (req, res, student, status, subject, me
     res.status(200).json({ message: `Student ${status} successfully`, data: student });
 };
 
+
+
 // GET: Retrieve a student's details by ID
 exports.getStudentDetails = async (req, res) => {
     try {
@@ -231,6 +249,8 @@ exports.getStudentDetails = async (req, res) => {
         res.status(500).json({ message: 'Error retrieving student details', error: err.message });
     }
 };
+
+
 
 // DELETE: Delete a student's details (with middleware checks)
 exports.deleteStudentDetails = async (req, res) => {
