@@ -10,19 +10,19 @@ const cron = require('node-cron');
 const cryptoUtils = require('../helpers/encryption');
 
 // Validate NFC data
-async function validateNFC(nfcTagId, studentId) {
-  if (!nfcTagId) return true;
-  const nfcValid = await NFCData.findOne({ studentId, tagId: nfcTagId });
-  return !!nfcValid;
+async function validateNFC(nfcTagId) {
+  if (!nfcTagId) return null;
+  const nfcRecord = await NFCData.findOne({ tagId: nfcTagId }).populate('studentob_Id'); // Assuming a reference to StudentDetails
+  return nfcRecord ? nfcRecord.studentId : null;
 }
 
 // Validate Biometric data
-async function validateBiometric(biometricData, studentId) {
-  if (!biometricData) return true;
-  const biometricRecord = await BiometricData.findOne({ studentId });
-  if (!biometricRecord) return false;
-  const decryptedBiometricData = cryptoUtils.decrypt(biometricRecord.template);
-  return biometricData === decryptedBiometricData;
+async function validateBiometric(biometricData) {
+  if (!biometricData) return null;
+  // Assuming biometricData is unique enough to directly find the related student
+  // This may involve more complex matching logic depending on your biometric data handling
+  const biometricRecord = await BiometricData.findOne({ template: biometricData }).populate('studentob_Id');
+  return biometricRecord ? biometricRecord.studentId : null;
 }
 
 // Determine the attendance status based on check-in time and session start time
@@ -150,10 +150,13 @@ async function findSessionForCheckIn(studentId, timestamp) {
 
 // Main check-in function
 exports.checkIn = async (req, res) => {
-  const { studentId, nfcTagId, biometricData } = req.body;
+  const { nfcTagId, biometricData } = req.body;
   const timestamp = new Date();
 
   try {
+    let studentId = await validateNFC(nfcTagId);
+    if (!studentId) studentId = await validateBiometric(biometricData);
+
     const student = await StudentDetails.findById(studentId);
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
