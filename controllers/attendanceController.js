@@ -9,21 +9,20 @@ const globalSettings = require('../config/globalSettings');
 const cron = require('node-cron');
 const cryptoUtils = require('../helpers/encryption');
 
-// Validate NFC data
 async function validateNFC(nfcTagId) {
-  if (!nfcTagId) return null;
-  const nfcRecord = await NFCData.findOne({ tagId: nfcTagId }).populate('studentob_Id'); // Assuming a reference to StudentDetails
-  return nfcRecord ? nfcRecord.studentId : null;
+  if (!nfcTagId) return null; // Immediately return if no NFC data is provided
+  const nfcRecord = await NFCData.findOne({ tagId: nfcTagId }).populate('studentob_Id');
+  return nfcRecord ? nfcRecord.studentob_Id : null;
 }
 
-// Validate Biometric data
 async function validateBiometric(biometricData) {
+  console.log(`Validating Biometric Data`);
   if (!biometricData) return null;
-  // Assuming biometricData is unique enough to directly find the related student
-  // This may involve more complex matching logic depending on your biometric data handling
   const biometricRecord = await BiometricData.findOne({ template: biometricData }).populate('studentob_Id');
-  return biometricRecord ? biometricRecord.studentId : null;
+  console.log(`Biometric Record found:`, biometricRecord);
+  return biometricRecord ? biometricRecord.studentob_Id : null;
 }
+
 
 // Determine the attendance status based on check-in time and session start time
 function determineAttendanceStatus(sessionStartTime, timestamp) {
@@ -154,18 +153,24 @@ exports.checkIn = async (req, res) => {
   const timestamp = new Date();
 
   try {
+    // Attempt to resolve the studentId using the NFC Tag ID
     let studentId = await validateNFC(nfcTagId);
-    if (!studentId) studentId = await validateBiometric(biometricData);
+    
+    // If the NFC Tag ID didn't resolve to a studentId, try the biometric data
+    if (!studentId) {
+      studentId = await validateBiometric(biometricData);
+    }
+
+    // If neither method resolves to a studentId, return an error
+    if (!studentId) {
+      return res.status(404).json({ message: "Student not found using NFC Tag ID or Biometric Data" });
+    }
+
+    // Assuming the validateNFC and validateBiometric return the ObjectId directly
 
     const student = await StudentDetails.findById(studentId);
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
-    }
-
-    const isValidNFC = await validateNFC(nfcTagId, student._id);
-    const isValidBiometric = await validateBiometric(biometricData, student._id);
-    if (!isValidNFC || !isValidBiometric) {
-      return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
     }
 
     // Find the current session for check-in
@@ -198,15 +203,25 @@ exports.checkOut = async (req, res) => {
   const timestamp = new Date(); // Ensure timestamp is defined for this scope
 
   try {
+
+     // Attempt to resolve the studentId using the NFC Tag ID
+     let studentId = await validateNFC(nfcTagId);
+    
+     // If the NFC Tag ID didn't resolve to a studentId, try the biometric data
+     if (!studentId) {
+       studentId = await validateBiometric(biometricData);
+     }
+ 
+     // If neither method resolves to a studentId, return an error
+     if (!studentId) {
+       return res.status(404).json({ message: "Student not found using NFC Tag ID or Biometric Data" });
+     }
+ 
+     // Assuming the validateNFC and validateBiometric return the ObjectId directly
+
     const student = await StudentDetails.findById(studentId);
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
-    }
-
-    const isValidNFC = await validateNFC(nfcTagId, student._id);
-    const isValidBiometric = await validateBiometric(biometricData, student._id);
-    if (!isValidNFC || !isValidBiometric) {
-      return res.status(400).json({ message: 'Invalid NFC or Biometric data' });
     }
 
     const session = await findSessionForCheckout(student._id, timestamp);
