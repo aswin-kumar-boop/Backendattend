@@ -486,52 +486,60 @@ async function performPeriodicCheck() {
 // Define the endpoint handler function
 exports.getAttendanceSummary = async (req, res) => {
   try {
-    // Extract parameters from request
     const { studentId } = req.params;
 
-    // Get the current date
     const currentDate = new Date();
     const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Query the database for attendance records for the current day
     const attendanceRecord = await Attendance.findOne({
-      studentId: mongoose.Types.ObjectId(studentId),
-      date: { $gte: today, $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) }, // For the current day
-      status: 'Present' // Consider only present status for the current day
+      studentId: studentId,
+      date: { $gte: today, $lt: tomorrow },
+      status: 'Present'
     });
 
-    // Query the database for total number of hours attended
+    console.log("Aggregating for studentId:", studentId);
+
     const totalHoursAttended = await Attendance.aggregate([
       {
         $match: {
-          studentId: mongoose.Types.ObjectId(studentId),
-          status: 'Present' // Consider only present status
+          studentId: new mongoose.Types.ObjectId(studentId), // Ensure matching the studentId
+          date: { $gte: today, $lt: tomorrow }, // Match records for the current day only
+          status: 'Present', // Consider only 'Present' status
         }
       },
+      { $unwind: '$checkOuts' }, // Unwind the checkOuts array to access each object
       {
         $group: {
           _id: null,
-          totalHours: { $sum: '$classDurationHours' }
+          totalHours: { $sum: '$checkOuts.classDurationHours' } // Sum the classDurationHours
         }
       }
     ]);
 
-    // Calculate total hours attended or default to 0 if no record found
+    console.log("Aggregation result:", totalHoursAttended);
+
     const totalHours = totalHoursAttended.length > 0 ? totalHoursAttended[0].totalHours : 0;
 
-    // Prepare the attendance summary
     const summary = {
-      presentToday: !!attendanceRecord,
-      totalHoursAttended: totalHours
+      presentToday: !!attendanceRecord, // Determine presence based on the existence of the attendance record
+      totalHoursAttended: totalHours,
+      // Add more details from attendanceRecord if needed
+      attendanceDetails: attendanceRecord ? {
+        checkInTime: attendanceRecord.checkIns.length > 0 ? attendanceRecord.checkIns[0].time : null,
+        checkOutTime: attendanceRecord.checkOuts.length > 0 ? attendanceRecord.checkOuts[0].time : null,
+        status: attendanceRecord.status
+      } : null
     };
 
-    // Send the attendance summary as JSON response
     res.json({ status: 'success', data: summary });
   } catch (err) {
     console.error('Error getting attendance summary:', err);
     res.status(500).json({ status: 'error', message: 'Server error', error: err.message });
   }
 };
+
 
 
 // Function to get attendance summary
