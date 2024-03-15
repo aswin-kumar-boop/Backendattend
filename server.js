@@ -14,13 +14,14 @@ const userRoutes = require('./routes/users');
 const studentRoutes = require('./routes/studentRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const timetableRoutes = require('./routes/timetableRoutes');
-const apiRoutes = require('./routes/api');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const facultyRoutes = require('./routes/facultyRoutes');
 const settingsRouter = require('./routes/settings'); // Adjust the path as necessary
 
 // Importing controllers and utilities
 const attendanceController = require('./controllers/attendanceController');
 const performPeriodicCheck = require('./controllers/attendanceController').performPeriodicCheck;
+
 
 
 const app = express();
@@ -34,7 +35,6 @@ const io = socketIo(server, {
 
 // Middleware setup
 app.use(cors());
-app.use('/api', apiRoutes);
 app.use(settingsRouter);
 app.use(bodyParser.json());
 
@@ -84,6 +84,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/timetable', timetableRoutes); 
+app.use('/api/faculty', facultyRoutes);
 app.use(express.json());
 
 // Additional setup for routes and socket.io...

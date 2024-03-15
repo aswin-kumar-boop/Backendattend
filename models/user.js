@@ -24,11 +24,6 @@ const userSchema = new Schema({
     type: String,
     enum: ['student', 'faculty', 'admin'],
   },
-  // department: { // Optional reference to Department model for faculty
-  //   type: mongoose.Schema.Types.ObjectId,
-  //   ref: 'Department',
-  //   required: function() { return this.role === 'faculty'; } // Conditionally required if the user is a faculty member
-  // },
   isActive: {
     type: Boolean,
     default: false,
@@ -74,10 +69,6 @@ userSchema.methods.generatePasswordResetToken = function() {
   this.resetPasswordExpires = Date.now() + 3600000; // 1 hour in milliseconds
   return resetToken;
 };
-
-// Index to automatically delete unverified users after 24 hours
-userSchema.index({ "expiresAt": 1 }, { expireAfterSeconds: 0 });
-// Existing methods here...
 
 const User = mongoose.model('User', userSchema);
 

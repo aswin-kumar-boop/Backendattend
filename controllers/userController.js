@@ -8,8 +8,10 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 const StudentDetails = require("../models/StudentDetails");
 const { sendEmail } = require("../helpers/emailHelper");
-const NFCData = require("../models/NFCData");
-const BiometricData = require("../models/biometricData");
+const NFCData = require('../models/NFCData');
+const BiometricData = require('../models/biometricData');
+const FacultyDetails = require('../models/FacultyDetails'); // Assuming this model exists
+
 
 // Environment variables
 const jwtSecret = process.env.JWT_SECRET;
@@ -148,6 +150,28 @@ exports.verifyOtp = async (req, res) => {
       await biometricDataInstance.save();
 
       message += ` Your unique student ID is: ${studentId}`;
+    }
+    else if (user.role === "faculty") {
+      // Generate default or duplicate data for faculty members
+      const facultyId = `FAC-${user._id}-${Date.now()}`; // Example of generating a unique faculty ID
+
+      // Attempt to find existing faculty details or create new ones
+      const facultyDetails = await FacultyDetails.findOneAndUpdate(
+        { user: user._id },
+        {
+          FacultyName: user.username, // Using username as a placeholder; adjust as necessary
+          department: "Default Department",
+          specialization: "Default Specialization",
+          officeHours: "9 AM - 5 PM",
+          officeLocation: "Campus Building A",
+          contactEmail: user.email, // Reuse user's email or set a default
+          contactPhone: "000-000-0000", // Default or generated phone number
+          researchInterests: ["General Interest"], // Default or generated interests
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true } // Create if not exists
+      );
+
+      message += " Your faculty details have been initialized.";
     }
 
     user.isActive = true;
@@ -335,44 +359,23 @@ exports.LoginVerify = async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired OTP." });
     }
 
-    // Retrieve the current time and user role
-    const currentTime = new Date().toISOString();
-    const userRole = user.role;
-
-    user.otp = null;
+    user.otp = null; // Clear OTP fields
     user.otpExpires = null;
     await user.save();
 
-    const token = jwt.sign({ userId: user._id }, jwtSecret, {
-      expiresIn: "1h",
-    });
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
-    let studentDetailsData = null;
-    let nfcDataInstance = null;
-    let biometricDataInstance = null;
+    let additionalDetails = null;
 
-    if (userRole === "student") {
-      studentDetailsData = await StudentDetails.findOne({ user: user._id });
-
-      if (studentDetailsData) {
-        nfcDataInstance = await NFCData.findOne({
-          studentob_Id: studentDetailsData._id,
-        });
-        biometricDataInstance = await BiometricData.findOne({
-          studentob_Id: studentDetailsData._id,
-        });
-
-        sendEmail(
-          user.email,
-          "Login Successful",
-          "You have successfully logged in to your student dashboard."
-        );
-      } else {
-        console.log("Student details not found for this user.");
-      }
+    switch (user.role) {
+      case "student":
+        additionalDetails = await fetchStudentDetails(user._id);
+        break;
+      case "faculty":
+        additionalDetails = await fetchFacultyDetails(user._id);
+        break;
     }
 
-    // Send the response with additional information
     res.json({
       success: true,
       message: "OTP verified successfully. Welcome to your dashboard.",
@@ -381,11 +384,9 @@ exports.LoginVerify = async (req, res) => {
         id: user._id,
         username: user.username,
         email: user.email,
-        role: userRole,
-        verifyTime: currentTime,
-        studentDetails: studentDetailsData,
-        nfcData: nfcDataInstance,
-        biometricData: biometricDataInstance,
+        role: user.role,
+        verifyTime: new Date().toISOString(),
+        additionalDetails: additionalDetails,
       },
     });
   } catch (err) {
@@ -393,6 +394,20 @@ exports.LoginVerify = async (req, res) => {
     res.status(500).json({ message: "Error during OTP verification." });
   }
 };
+
+
+async function fetchStudentDetails(userId) {
+  const details = await StudentDetails.findOne({ user: userId });
+  const nfcData = await NFCData.findOne({ studentob_Id: details?._id });
+  const biometricData = await BiometricData.findOne({ studentob_Id: details?._id });
+  return { ...details?._doc, nfcData, biometricData }; // Use spread operator to flatten details document
+}
+
+async function fetchFacultyDetails(userId) {
+  const details = await FacultyDetails.findOne({ user: userId }).lean(); // Using .lean() for performance if you don't need a mongoose document
+  // Assuming FacultyDetails model exists and is correctly set up to reference User model
+  return details; // Directly return the document
+}
 
 // Function to get a single user by ID with associated NFC and biometric data
 exports.getUserById = async (req, res) => {
