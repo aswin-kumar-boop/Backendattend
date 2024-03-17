@@ -11,7 +11,7 @@ const process = require('process');
 
 // Function to update student details
 exports.updateStudentDetails = async (req, res) => {
-    const userId = req.user.userId; 
+    const userId = req.user._Id; 
     const { name, course, year, section, academicLevel, currentSemester, departmentName, className } = req.body;
   
     try {

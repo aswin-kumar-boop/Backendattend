@@ -9,7 +9,7 @@ const { authenticateToken } = require('../helpers/auth');
 // POST: Create a new student's details
 // Assuming updateStudentDetails and other functions are defined and exported in studentDetailsController
 router.post(
-    '/update-details/:id',
+    '/update-details',
     [body('name').notEmpty().withMessage('Name is required')],
     middleware.AuthMiddleware,
     studentController.updateStudentDetails
