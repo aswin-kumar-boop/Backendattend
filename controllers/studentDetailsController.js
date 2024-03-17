@@ -114,9 +114,6 @@ exports.updateNFCData = async (req, res) => {
 
     sendEmail(user.email, emailSubject, emailBody);
 }
-
-
-
         res.status(200).json({
             success: true,
             message: "NFC data updated successfully.",
