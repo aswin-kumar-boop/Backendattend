@@ -365,14 +365,14 @@ exports.LoginVerify = async (req, res) => {
 
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
-    let additionalDetails = null;
+    let studentDetails = null;
 
     switch (user.role) {
       case "student":
-        additionalDetails = await fetchStudentDetails(user._id);
+        studentDetails = await fetchStudentDetails(user._id);
         break;
       case "faculty":
-        additionalDetails = await fetchFacultyDetails(user._id);
+        studentDetails = await fetchFacultyDetails(user._id);
         break;
     }
 
@@ -386,7 +386,7 @@ exports.LoginVerify = async (req, res) => {
         email: user.email,
         role: user.role,
         verifyTime: new Date().toISOString(),
-        additionalDetails: additionalDetails,
+        studentDetails: studentDetails,
       },
     });
   } catch (err) {
