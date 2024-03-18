@@ -10,6 +10,7 @@ const cron = require('node-cron');
 const cryptoUtils = require('../helpers/encryption');
 const { sendEmail } = require('../helpers/emailHelper');
 const User = require("../models/user");
+const axios = require('axios');
 
 async function validateNFC(nfcTagId) {
   if (!nfcTagId) return null; // Immediately return if no NFC data is provided
@@ -150,16 +151,23 @@ async function findSessionForCheckIn(studentId, timestamp) {
 }
 
 // Main check-in function
-exports.checkIn = async (req, res) => {
-  const { nfcTagId, biometricData } = req.body;
+exports.checkOut = async (req, res) => {
+  // Removed initial request body destructuring for studentId, nfcTagId, and biometricData
+
   const timestamp = new Date();
 
   try {
-    // Attempt to resolve the studentId using the NFC Tag ID
+    // Fetch NFC Tag ID from FastAPI
+    const nfcResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-nfc`);
+    const nfcTagId = nfcResponse.data.tagId;
+
     let studentId = await validateNFC(nfcTagId);
     
-    // If the NFC Tag ID didn't resolve to a studentId, try the biometric data
+    // If the NFC Tag ID didn't resolve to a studentId, fetch the biometric data
     if (!studentId) {
+      const bioResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-fingerprint`);
+      const biometricData = bioResponse.data.template; // Adjust according to your data structure
+
       studentId = await validateBiometric(biometricData);
     }
 
@@ -227,19 +235,25 @@ exports.checkIn = async (req, res) => {
 };
 
 // Main checkout function
-exports.checkOut = async (req, res) => {
-  const { studentId, nfcTagId, biometricData } = req.body;
-  const timestamp = new Date(); // Ensure timestamp is defined for this scope
+exports.checkIn = async (req, res) => {
+  // Removed initial request body destructuring for nfcTagId and biometricData
+
+  const timestamp = new Date();
 
   try {
+    // Fetch NFC Tag ID from FastAPI
+    const nfcResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-nfc`);
+    const nfcTagId = nfcResponse.data.tagId;
 
-     // Attempt to resolve the studentId using the NFC Tag ID
-     let studentId = await validateNFC(nfcTagId);
+    let studentId = await validateNFC(nfcTagId);
     
-     // If the NFC Tag ID didn't resolve to a studentId, try the biometric data
-     if (!studentId) {
-       studentId = await validateBiometric(biometricData);
-     }
+    // If the NFC Tag ID didn't resolve to a studentId, fetch the biometric data
+    if (!studentId) {
+      const bioResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-fingerprint`);
+      const biometricData = bioResponse.data.template; // Adjust according to your data structure
+
+      studentId = await validateBiometric(biometricData);
+    }
  
      // If neither method resolves to a studentId, return an error
      if (!studentId) {
