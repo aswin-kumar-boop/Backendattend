@@ -365,14 +365,14 @@ exports.LoginVerify = async (req, res) => {
 
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
-    let studentDetails = null;
+    let additionalDetails = null;
 
     switch (user.role) {
       case "student":
-        studentDetails = await fetchStudentDetails(user._id);
+        additionalDetails = await fetchStudentDetails(user._id);
         break;
       case "faculty":
-        studentDetails = await fetchFacultyDetails(user._id);
+        additionalDetails = await fetchFacultyDetails(user._id);
         break;
     }
 
