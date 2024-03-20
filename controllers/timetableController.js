@@ -61,66 +61,71 @@ exports.addClassWithTimetable = async (req, res) => {
 // Simplified function to add a session to a class timetable
 exports.addSession = async (req, res) => {
   try {
-      const { semester, year, session, classDetails } = req.body;
-      const { className, classCode } = classDetails;
+    const { semester, year, session, classDetails, startDate, endDate } = req.body;
+    const { className, classCode } = classDetails;
 
-      // Find the class by className or classCode
-      const existingClass = await Class.findOne({ 
-        $or: [{ className: className }, { classCode: classCode }] 
-      });
-      
-      if (!existingClass) {
-          return res.status(404).json({ status: 'error', message: 'Class not found' });
-      }
+    // Find the class by className or classCode
+    const existingClass = await Class.findOne({ 
+      $or: [{ className: className }, { classCode: classCode }] 
+    });
+    
+    if (!existingClass) {
+      return res.status(404).json({ status: 'error', message: 'Class not found' });
+    }
 
-      const classId = existingClass._id;
+    const classId = existingClass._id;
 
-      // Attempt to find an existing timetable for this class for the given semester and year
-      let timetable = await Timetable.findOne({ classId, semester, year });
+    // Attempt to find an existing timetable for this class for the given semester and year
+    let timetable = await Timetable.findOne({ classId, semester, year });
 
-      // Calculate the duration of the new session
-      const newSessionDuration = (new Date(session.endTime) - new Date(session.startTime)) / (3600000); // Convert ms to hours
+    // Calculate the duration of the new session
+    const newSessionDuration = (new Date(session.endTime) - new Date(session.startTime)) / (3600000); // Convert ms to hours
 
-      // If a timetable exists, calculate the total session duration for the new session's day to ensure it doesn't exceed the limit
-      if (timetable) {
-          const totalDurationOnDay = timetable.sessions.filter(s => s.day === session.day)
-              .reduce((total, currentSession) => total + ((new Date(currentSession.endTime) - new Date(currentSession.startTime)) / (3600000)), 0);
+    // If a timetable exists, calculate the total session duration for the new session's day to ensure it doesn't exceed the limit
+    if (timetable) {
+      const totalDurationOnDay = timetable.sessions.filter(s => s.day === session.day)
+          .reduce((total, currentSession) => total + ((new Date(currentSession.endTime) - new Date(currentSession.startTime)) / (3600000)), 0);
 
-          if (totalDurationOnDay + newSessionDuration > globalSettings.timetable.TotalDuration) {
-              return res.status(400).json({
-                  status: 'error',
-                  message: `Adding this session exceeds the daily limit of ${globalSettings.timetable.TotalDuration} hours.`
-              });
-          }
-
-          // Add the new session to the existing timetable
-          timetable.sessions.push(session);
-      } else {
-          // If no timetable exists, create a new one with the session, ensuring the single session does not exceed the daily limit
-          if (newSessionDuration > globalSettings.timetable.TotalDuration) {
-              return res.status(400).json({
-                  status: 'error',
-                  message: `Session duration exceeds the daily limit of ${globalSettings.timetable.TotalDuration} hours.`
-              });
-          }
-
-          timetable = new Timetable({
-              semester,
-              year,
-              classId,
-              sessions: [session],
-              startDate: req.body.startDate,
-              endDate: req.body.endDate
+      if (totalDurationOnDay + newSessionDuration > globalSettings.timetable.TotalDuration) {
+          return res.status(400).json({
+              status: 'error',
+              message: `Adding this session exceeds the daily limit of ${globalSettings.timetable.TotalDuration} hours.`
           });
       }
 
-      await timetable.save();
-      res.status(201).json({ status: 'success', message: 'Session added successfully', data: timetable });
+      // Add the new session to the existing timetable
+      timetable.sessions.push(session);
+    } else {
+      // If no timetable exists, create a new one with the session, ensuring the single session does not exceed the daily limit
+      if (newSessionDuration > globalSettings.timetable.TotalDuration) {
+          return res.status(400).json({
+              status: 'error',
+              message: `Session duration exceeds the daily limit of ${globalSettings.timetable.TotalDuration} hours.`
+          });
+      }
+
+      // Check if startDate and endDate are provided, if not, use default values
+      const timetableStartDate = startDate || new Date(); // Default to current date if not provided
+      const timetableEndDate = endDate || new Date(); // Default to current date if not provided
+      
+      timetable = new Timetable({
+          semester,
+          year,
+          classId,
+          sessions: [session],
+          startDate: timetableStartDate,
+          endDate: timetableEndDate
+      });
+    }
+
+    await timetable.save();
+    res.status(201).json({ status: 'success', message: 'Session added successfully', data: timetable });
   } catch (error) {
-      console.error(error);
-      res.status(500).json({ status: 'error', message: 'Server error' });
+    console.error(error);
+    res.status(500).json({ status: 'error', message: 'Server error' });
   }
 };
+
 
 
 // Controller method to update a session in the timetable
