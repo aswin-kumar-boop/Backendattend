@@ -104,17 +104,13 @@ exports.addSession = async (req, res) => {
           });
       }
 
-      // Check if startDate and endDate are provided, if not, use default values
-      const timetableStartDate = startDate || new Date(); // Default to current date if not provided
-      const timetableEndDate = endDate || new Date(); // Default to current date if not provided
-      
       timetable = new Timetable({
           semester,
           year,
           classId,
           sessions: [session],
-          startDate: timetableStartDate,
-          endDate: timetableEndDate
+          startDate,
+          endDate
       });
     }
 
@@ -125,8 +121,6 @@ exports.addSession = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Server error' });
   }
 };
-
-
 
 // Controller method to update a session in the timetable
 exports.updateSession = async (req, res) => {

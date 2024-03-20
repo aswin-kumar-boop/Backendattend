@@ -156,6 +156,7 @@ exports.checkIn = async (req, res) => {
   // Removed initial request body destructuring for nfcTagId and biometricData
 
   const timestamp = new Date();
+  console.log('Timestamp:', timestamp);
 
   try {
     // Fetch NFC Tag ID from FastAPI
