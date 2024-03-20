@@ -61,13 +61,19 @@ exports.addClassWithTimetable = async (req, res) => {
 // Simplified function to add a session to a class timetable
 exports.addSession = async (req, res) => {
   try {
-      const { semester, year, classId, session } = req.body;
+      const { semester, year, session, classDetails } = req.body;
+      const { className, classCode } = classDetails;
 
-      // Verify the class exists
-      const existingClass = await Class.findById(classId);
+      // Find the class by className or classCode
+      const existingClass = await Class.findOne({ 
+        $or: [{ className: className }, { classCode: classCode }] 
+      });
+      
       if (!existingClass) {
           return res.status(404).json({ status: 'error', message: 'Class not found' });
       }
+
+      const classId = existingClass._id;
 
       // Attempt to find an existing timetable for this class for the given semester and year
       let timetable = await Timetable.findOne({ classId, semester, year });
@@ -115,7 +121,6 @@ exports.addSession = async (req, res) => {
       res.status(500).json({ status: 'error', message: 'Server error' });
   }
 };
-
 
 
 // Controller method to update a session in the timetable

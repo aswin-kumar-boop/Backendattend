@@ -150,89 +150,6 @@ async function findSessionForCheckIn(studentId, timestamp) {
   return session;
 }
 
-// Main check-in function
-exports.checkOut = async (req, res) => {
-  // Removed initial request body destructuring for studentId, nfcTagId, and biometricData
-
-  const timestamp = new Date();
-
-  try {
-    // Fetch NFC Tag ID from FastAPI
-    const nfcResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-nfc`);
-    const nfcTagId = nfcResponse.data.tagId;
-
-    let studentId = await validateNFC(nfcTagId);
-    
-    // If the NFC Tag ID didn't resolve to a studentId, fetch the biometric data
-    if (!studentId) {
-      const bioResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-fingerprint`);
-      const biometricData = bioResponse.data.template; // Adjust according to your data structure
-
-      studentId = await validateBiometric(biometricData);
-    }
-
-    // If neither method resolves to a studentId, return an error
-    if (!studentId) {
-      return res.status(404).json({ message: "Student not found using NFC Tag ID or Biometric Data" });
-    }
-
-    // Assuming the validateNFC and validateBiometric return the ObjectId directly
-
-    const student = await StudentDetails.findById(studentId).populate('user');
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
-
-    // Find the current session for check-in
-    const session = await findSessionForCheckIn(student._id, timestamp);
-    if (!session) {
-      return res.status(404).json({ message: 'No session available for check-in at this time.' });
-    }
-
-    // Ensure the session is present in the timetable
-    const timetableSession = await Timetable.findOne({
-      _id: session._id, // Assuming session has a unique identifier
-      'sessions.startTime': session.startTime,
-      'sessions.endTime': session.endTime,
-    });
-    // Determine attendance status and record attendance
-    const attendanceStatus = determineAttendanceStatus(session.startTime, timestamp);
-    const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
-    const attendanceRecord = await recordAttendance(studentId, session._id, date, attendanceStatus);
-
-
-    // Access the student's User document to get the email
-    const userEmail = student.user.email; // Since 'user' is populated, we can access 'email' directly
-    const studentName = student.name; 
-
-    const sessionDetails = `Session ID: ${session._id}, Session Start Time: ${session.startTime}`;
-    const emailSubject = "Check-in Confirmation";
-    const emailBody = `
-    Hello ${studentName},
-
-    You have successfully checked in for your session. Here are the session details:
-    ${sessionDetails}
-
-    Status: ${attendanceStatus}
-
-    If this was not you, please contact the administration immediately.
-
-    Best regards,
-    The Bionite Team`;
-
-    sendEmail(userEmail, emailSubject, emailBody).then(() => {
-      console.log('Check-in confirmation email sent successfully.');
-    }).catch(err => {
-      console.error('Failed to send check-in confirmation email:', err);
-});
-
-
-    res.status(200).json({ message: 'Check-in successful', session: session, attendance: attendanceRecord });
-  } catch (err) {
-    console.error('Error during check-in:', err);
-    res.status(500).json({ message: 'Server error', error: err.message });
-  }
-};
 
 // Main checkout function
 exports.checkIn = async (req, res) => {
@@ -370,6 +287,90 @@ async function findSessionForCheckout(studentId, timestamp) {
 
   return session; // Return the found session
 }
+
+// Main check-in function
+exports.checkOut = async (req, res) => {
+  // Removed initial request body destructuring for studentId, nfcTagId, and biometricData
+
+  const timestamp = new Date();
+
+  try {
+    // Fetch NFC Tag ID from FastAPI
+    const nfcResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-nfc`);
+    const nfcTagId = nfcResponse.data.tagId;
+
+    let studentId = await validateNFC(nfcTagId);
+    
+    // If the NFC Tag ID didn't resolve to a studentId, fetch the biometric data
+    if (!studentId) {
+      const bioResponse = await axios.get(`${process.env.FASTAPI_BASE_URL}/read-fingerprint`);
+      const biometricData = bioResponse.data.template; // Adjust according to your data structure
+
+      studentId = await validateBiometric(biometricData);
+    }
+
+    // If neither method resolves to a studentId, return an error
+    if (!studentId) {
+      return res.status(404).json({ message: "Student not found using NFC Tag ID or Biometric Data" });
+    }
+
+    // Assuming the validateNFC and validateBiometric return the ObjectId directly
+
+    const student = await StudentDetails.findById(studentId).populate('user');
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    // Find the current session for check-in
+    const session = await findSessionForCheckIn(student._id, timestamp);
+    if (!session) {
+      return res.status(404).json({ message: 'No session available for check-in at this time.' });
+    }
+
+    // Ensure the session is present in the timetable
+    const timetableSession = await Timetable.findOne({
+      _id: session._id, // Assuming session has a unique identifier
+      'sessions.startTime': session.startTime,
+      'sessions.endTime': session.endTime,
+    });
+    // Determine attendance status and record attendance
+    const attendanceStatus = determineAttendanceStatus(session.startTime, timestamp);
+    const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
+    const attendanceRecord = await recordAttendance(studentId, session._id, date, attendanceStatus);
+
+
+    // Access the student's User document to get the email
+    const userEmail = student.user.email; // Since 'user' is populated, we can access 'email' directly
+    const studentName = student.name; 
+
+    const sessionDetails = `Session ID: ${session._id}, Session Start Time: ${session.startTime}`;
+    const emailSubject = "Check-in Confirmation";
+    const emailBody = `
+    Hello ${studentName},
+
+    You have successfully checked in for your session. Here are the session details:
+    ${sessionDetails}
+
+    Status: ${attendanceStatus}
+
+    If this was not you, please contact the administration immediately.
+
+    Best regards,
+    The Bionite Team`;
+
+    sendEmail(userEmail, emailSubject, emailBody).then(() => {
+      console.log('Check-in confirmation email sent successfully.');
+    }).catch(err => {
+      console.error('Failed to send check-in confirmation email:', err);
+});
+
+
+    res.status(200).json({ message: 'Check-in successful', session: session, attendance: attendanceRecord });
+  } catch (err) {
+    console.error('Error during check-in:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
 
 function determineCheckoutStatus(sessionEndTime, checkoutTime) {
   // Convert session end time and checkout time to Date objects if they're not already
