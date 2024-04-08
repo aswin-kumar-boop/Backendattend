@@ -1,10 +1,10 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 // Schema for a single class session
 const classSessionSchema = new mongoose.Schema({
   day: {
     type: String,
-    enum: ['MON', 'TUE', 'WED', 'THU', 'FRI','SAT','SUN'],
+    enum: ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
     required: true,
   },
   startTime: {
@@ -25,7 +25,7 @@ const classSessionSchema = new mongoose.Schema({
   },
   sessionType: {
     type: String,
-    enum: ['LECTURE', 'LAB'],
+    enum: ["LECTURE", "LAB"],
     required: true,
   },
   // ... you can add additional fields as needed, such as instructor, room, etc.
@@ -35,7 +35,7 @@ const classSessionSchema = new mongoose.Schema({
 const timetableSchema = new mongoose.Schema({
   semester: {
     type: Number,
-    required: true,
+    required: false,
   },
   year: {
     type: Number,
@@ -43,21 +43,21 @@ const timetableSchema = new mongoose.Schema({
   },
   classId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Class', // Assuming you have a Class model
+    ref: "Class", // Assuming you have a Class model
     required: true,
   },
   sessions: [classSessionSchema], // Array of class sessions
   startDate: {
     type: Date, // Semester start date
-    required: true
+    required: false,
   },
   endDate: {
     type: Date, // Semester end date
-    required: true,
+    required: false,
   },
   // Add any other fields you need for the timetable
 });
 
-const Timetable = mongoose.model('Timetable', timetableSchema);
+const Timetable = mongoose.model("Timetable", timetableSchema);
 
 module.exports = Timetable;

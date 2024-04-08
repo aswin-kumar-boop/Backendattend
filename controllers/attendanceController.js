@@ -1,30 +1,34 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
-const StudentDetails = require('../models/StudentDetails');
-const NFCData = require('../models/NFCData');
-const BiometricData = require('../models/biometricData');
-const Attendance = require('../models/attendance');
-const Timetable = require('../models/Timetable');
-const globalSettings = require('../config/globalSettings');
-const cron = require('node-cron');
-const cryptoUtils = require('../helpers/encryption');
-const { sendEmail } = require('../helpers/emailHelper');
+const mongoose = require("mongoose");
+const bcrypt = require("bcrypt");
+const StudentDetails = require("../models/StudentDetails");
+const NFCData = require("../models/NFCData");
+const BiometricData = require("../models/biometricData");
+const Attendance = require("../models/attendance");
+const Timetable = require("../models/timetable");
+const globalSettings = require("../config/globalSettings");
+const cron = require("node-cron");
+const cryptoUtils = require("../helpers/encryption");
+const { sendEmail } = require("../helpers/emailHelper");
 const User = require("../models/user");
+const axios = require("axios");
 
 async function validateNFC(nfcTagId) {
   if (!nfcTagId) return null; // Immediately return if no NFC data is provided
-  const nfcRecord = await NFCData.findOne({ tagId: nfcTagId }).populate('studentob_Id');
+  const nfcRecord = await NFCData.findOne({ tagId: nfcTagId }).populate(
+    "studentob_Id"
+  );
   return nfcRecord ? nfcRecord.studentob_Id : null;
 }
 
 async function validateBiometric(biometricData) {
   console.log(`Validating Biometric Data`);
   if (!biometricData) return null;
-  const biometricRecord = await BiometricData.findOne({ template: biometricData }).populate('studentob_Id');
+  const biometricRecord = await BiometricData.findOne({
+    template: biometricData,
+  }).populate("studentob_Id");
   console.log(`Biometric Record found:`, biometricRecord);
   return biometricRecord ? biometricRecord.studentob_Id : null;
 }
-
 
 // Determine the attendance status based on check-in time and session start time
 function determineAttendanceStatus(sessionStartTime, timestamp) {
@@ -52,13 +56,19 @@ function determineAttendanceStatus(sessionStartTime, timestamp) {
 
   // Determine attendance status based on time comparison
   if (timestampTotalMinutes < earlyCheckInStart) {
-    return 'Too Early'; // More than 15 minutes before session starts
-  } else if (timestampTotalMinutes >= earlyCheckInStart && timestampTotalMinutes <= sessionStartTotalMinutes) {
-    return 'Early'; // Within 15 minutes before session start, inclusive
-  } else if (timestampTotalMinutes > sessionStartTotalMinutes && timestampTotalMinutes <= onTimeCheckInEnd) {
-    return 'On Time'; // From session start time to 15 minutes after
+    return "Too Early"; // More than 15 minutes before session starts
+  } else if (
+    timestampTotalMinutes >= earlyCheckInStart &&
+    timestampTotalMinutes <= sessionStartTotalMinutes
+  ) {
+    return "Early"; // Within 15 minutes before session start, inclusive
+  } else if (
+    timestampTotalMinutes > sessionStartTotalMinutes &&
+    timestampTotalMinutes <= onTimeCheckInEnd
+  ) {
+    return "On Time"; // From session start time to 15 minutes after
   } else {
-    return 'Late'; // After the on-time window
+    return "Late"; // After the on-time window
   }
 }
 
@@ -66,7 +76,10 @@ function determineAttendanceStatus(sessionStartTime, timestamp) {
 // Record attendance in the database
 async function recordAttendance(studentId, sessionId, date, status) {
   // Find or create the attendance record
-  let attendance = await Attendance.findOne({ studentId: studentId, date: date });
+  let attendance = await Attendance.findOne({
+    studentId: studentId,
+    date: date,
+  });
 
   if (!attendance) {
     attendance = new Attendance({
@@ -75,11 +88,15 @@ async function recordAttendance(studentId, sessionId, date, status) {
     });
   } else {
     // Check if the session has already been checked in
-    const sessionCheckInIndex = attendance.checkIns.findIndex(checkIn => checkIn.sessionId && checkIn.sessionId.toString() === sessionId.toString());
+    const sessionCheckInIndex = attendance.checkIns.findIndex(
+      (checkIn) =>
+        checkIn.sessionId &&
+        checkIn.sessionId.toString() === sessionId.toString()
+    );
 
     if (sessionCheckInIndex !== -1) {
       // If the session is already checked in, throw an error or handle as needed
-      throw new Error('Already checked in for this session.');
+      throw new Error("Already checked in for this session.");
     }
   }
 
@@ -96,27 +113,33 @@ async function recordAttendance(studentId, sessionId, date, status) {
 }
 // Find the current or next available session for check-in
 async function findSessionForCheckIn(studentId, timestamp) {
-  const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
+  const dayOfWeek = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][
+    timestamp.getDay()
+  ];
   const now = timestamp.getHours() * 60 + timestamp.getMinutes();
 
-  console.log('Timestamp:', timestamp);
-  console.log('Day of week:', dayOfWeek);
-  console.log('Current time in minutes:', now);
+  console.log("Timestamp:", timestamp);
+  console.log("Day of week:", dayOfWeek);
+  console.log("Current time in minutes:", now);
 
   const timetable = await Timetable.findOne({
-    'sessions.day': dayOfWeek,
+    "sessions.day": dayOfWeek,
   });
 
-  console.log('Timetable:', timetable);
+  console.log("Timetable:", timetable);
 
   if (!timetable) {
     return null; // No matching timetable found
   }
 
   // Adjusted to filter sessions based on the current time and allow check-in 15 minutes before session start
-  const session = timetable.sessions.find(session => {
-    const sessionStartTime = new Date(session.startTime).getHours() * 60 + new Date(session.startTime).getMinutes();
-    const sessionEndTime = new Date(session.endTime).getHours() * 60 + new Date(session.endTime).getMinutes();
+  const session = timetable.sessions.find((session) => {
+    const sessionStartTime =
+      new Date(session.startTime).getHours() * 60 +
+      new Date(session.startTime).getMinutes();
+    const sessionEndTime =
+      new Date(session.endTime).getHours() * 60 +
+      new Date(session.endTime).getMinutes();
     const earlyCheckInStartTime = sessionStartTime - 20; // Allow check-in 20 minutes before the session starts
     const checkInEndTime = sessionStartTime + 20; // Allow check-in until 20 minutes after the session starts
 
@@ -128,7 +151,7 @@ async function findSessionForCheckIn(studentId, timestamp) {
     );
   });
 
-  console.log('Session:', session);
+  console.log("Session:", session);
 
   if (!session) {
     return null; // No available session for check-in or it's too late to check in
@@ -137,10 +160,10 @@ async function findSessionForCheckIn(studentId, timestamp) {
   // Ensure the session is present in the timetable
   const timetableSession = await Timetable.findOne({
     _id: timetable._id,
-    'sessions._id': session._id,
+    "sessions._id": session._id,
   });
 
-  console.log('Timetable Session:', timetableSession);
+  console.log("Timetable Session:", timetableSession);
 
   if (!timetableSession) {
     return null; // Session not found in the timetable
@@ -149,124 +172,70 @@ async function findSessionForCheckIn(studentId, timestamp) {
   return session;
 }
 
-// Main check-in function
+// Main checkout function
 exports.checkIn = async (req, res) => {
-  const { nfcTagId, biometricData } = req.body;
+  // Removed initial request body destructuring for nfcTagId and biometricData
+
   const timestamp = new Date();
+  console.log("Timestamp:", timestamp);
 
   try {
-    // Attempt to resolve the studentId using the NFC Tag ID
+    // Fetch NFC Tag ID from FastAPI
+    const nfcResponse = await axios.get(
+      `${process.env.FASTAPI_BASE_URL}/read-nfc`
+    );
+    const nfcTagId = nfcResponse.data.tagId;
+
     let studentId = await validateNFC(nfcTagId);
-    
-    // If the NFC Tag ID didn't resolve to a studentId, try the biometric data
+
+    // If the NFC Tag ID didn't resolve to a studentId, fetch the biometric data
     if (!studentId) {
+      const bioResponse = await axios.get(
+        `${process.env.FASTAPI_BASE_URL}/read-fingerprint`
+      );
+      const biometricData = bioResponse.data.template; // Adjust according to your data structure
+
       studentId = await validateBiometric(biometricData);
     }
 
     // If neither method resolves to a studentId, return an error
     if (!studentId) {
-      return res.status(404).json({ message: "Student not found using NFC Tag ID or Biometric Data" });
+      return res.status(404).json({
+        message: "Student not found using NFC Tag ID or Biometric Data",
+      });
     }
 
     // Assuming the validateNFC and validateBiometric return the ObjectId directly
 
-    const student = await StudentDetails.findById(studentId).populate('user');
+    const student = await StudentDetails.findById(studentId).populate("user");
     if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
-
-    // Find the current session for check-in
-    const session = await findSessionForCheckIn(student._id, timestamp);
-    if (!session) {
-      return res.status(404).json({ message: 'No session available for check-in at this time.' });
-    }
-
-    // Ensure the session is present in the timetable
-    const timetableSession = await Timetable.findOne({
-      _id: session._id, // Assuming session has a unique identifier
-      'sessions.startTime': session.startTime,
-      'sessions.endTime': session.endTime,
-    });
-    // Determine attendance status and record attendance
-    const attendanceStatus = determineAttendanceStatus(session.startTime, timestamp);
-    const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
-    const attendanceRecord = await recordAttendance(studentId, session._id, date, attendanceStatus);
-
-
-    // Access the student's User document to get the email
-    const userEmail = student.user.email; // Since 'user' is populated, we can access 'email' directly
-    const studentName = student.name; 
-
-    const sessionDetails = `Session ID: ${session._id}, Session Start Time: ${session.startTime}`;
-    const emailSubject = "Check-in Confirmation";
-    const emailBody = `
-    Hello ${studentName},
-
-    You have successfully checked in for your session. Here are the session details:
-    ${sessionDetails}
-
-    Status: ${attendanceStatus}
-
-    If this was not you, please contact the administration immediately.
-
-    Best regards,
-    The Bionite Team`;
-
-    sendEmail(userEmail, emailSubject, emailBody).then(() => {
-      console.log('Check-in confirmation email sent successfully.');
-    }).catch(err => {
-      console.error('Failed to send check-in confirmation email:', err);
-});
-
-
-    res.status(200).json({ message: 'Check-in successful', session: session, attendance: attendanceRecord });
-  } catch (err) {
-    console.error('Error during check-in:', err);
-    res.status(500).json({ message: 'Server error', error: err.message });
-  }
-};
-
-// Main checkout function
-exports.checkOut = async (req, res) => {
-  const { studentId, nfcTagId, biometricData } = req.body;
-  const timestamp = new Date(); // Ensure timestamp is defined for this scope
-
-  try {
-
-     // Attempt to resolve the studentId using the NFC Tag ID
-     let studentId = await validateNFC(nfcTagId);
-    
-     // If the NFC Tag ID didn't resolve to a studentId, try the biometric data
-     if (!studentId) {
-       studentId = await validateBiometric(biometricData);
-     }
- 
-     // If neither method resolves to a studentId, return an error
-     if (!studentId) {
-       return res.status(404).json({ message: "Student not found using NFC Tag ID or Biometric Data" });
-     }
- 
-     // Assuming the validateNFC and validateBiometric return the ObjectId directly
-
-    const student = await StudentDetails.findById(studentId).populate('user');
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
+      return res.status(404).json({ message: "Student not found" });
     }
 
     const session = await findSessionForCheckout(student._id, timestamp);
     if (!session) {
-      return res.status(404).json({ message: 'No session available for checkout at this time.' });
+      return res
+        .status(404)
+        .json({ message: "No session available for checkout at this time." });
     }
 
     const checkoutStatus = determineCheckoutStatus(session.endTime, timestamp);
     const date = timestamp.setHours(0, 0, 0, 0); // Normalize the date
-    const attendanceRecord = await recordCheckout(studentId, session._id, date, checkoutStatus, nfcTagId, biometricData, timestamp);
+    const attendanceRecord = await recordCheckout(
+      studentId,
+      session._id,
+      date,
+      checkoutStatus,
+      nfcTagId,
+      biometricData,
+      timestamp
+    );
 
     // Update attendance status based on checkout status
-    if (checkoutStatus === 'Completed') {
-      attendanceRecord.status = 'Present'; // Update status to 'Present' if checkout completed
+    if (checkoutStatus === "Completed") {
+      attendanceRecord.status = "Present"; // Update status to 'Present' if checkout completed
     } else {
-      attendanceRecord.status = 'Absent'; // Otherwise, update status to 'Absent'
+      attendanceRecord.status = "Absent"; // Otherwise, update status to 'Absent'
     }
 
     // Save the updated attendance record
@@ -274,7 +243,7 @@ exports.checkOut = async (req, res) => {
 
     // Access the student's User document to get the email for checkout confirmation
     const userEmail = student.user.email; // Access email from populated user document
-    const studentName = student.name; 
+    const studentName = student.name;
 
     const sessionDetails = `Session ID: ${session._id}, Session End Time: ${session.endTime}`;
     const emailSubject = "Checkout Confirmation";
@@ -291,42 +260,51 @@ exports.checkOut = async (req, res) => {
     Best regards,
     The Bionite Team`;
 
-    sendEmail(userEmail, emailSubject, emailBody).then(() => {
-      console.log('Checkout confirmation email sent successfully.');
-  }).catch(err => {
-      console.error('Failed to send checkout confirmation email:', err);
-});
-res.status(200).json({ message: 'Checkout successful', session: session, attendance: attendanceRecord });
-
+    sendEmail(userEmail, emailSubject, emailBody)
+      .then(() => {
+        console.log("Checkout confirmation email sent successfully.");
+      })
+      .catch((err) => {
+        console.error("Failed to send checkout confirmation email:", err);
+      });
+    res.status(200).json({
+      message: "Checkout successful",
+      session: session,
+      attendance: attendanceRecord,
+    });
   } catch (err) {
-    console.error('Error during checkout:', err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error("Error during checkout:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
 async function findSessionForCheckout(studentId, timestamp) {
-  const dayOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][timestamp.getDay()];
+  const dayOfWeek = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][
+    timestamp.getDay()
+  ];
   const now = timestamp.getHours() * 60 + timestamp.getMinutes();
 
   // Added logging statements
-  console.log('Timestamp:', timestamp);
-  console.log('Day of week:', dayOfWeek);
-  console.log('Current time in minutes:', now);
+  console.log("Timestamp:", timestamp);
+  console.log("Day of week:", dayOfWeek);
+  console.log("Current time in minutes:", now);
 
   // Find the timetable that includes today's date and sessions for the student
   const timetable = await Timetable.findOne({
-    'sessions.day': dayOfWeek,
+    "sessions.day": dayOfWeek,
   });
 
-  console.log('Timetable:', timetable);
+  console.log("Timetable:", timetable);
 
   if (!timetable) {
     return null; // No matching timetable found
   }
 
   // Filter sessions to find the most relevant session for checkout
-  const session = timetable.sessions.find(session => {
-    const sessionEndTime = new Date(session.endTime).getHours() * 60 + new Date(session.endTime).getMinutes();
+  const session = timetable.sessions.find((session) => {
+    const sessionEndTime =
+      new Date(session.endTime).getHours() * 60 +
+      new Date(session.endTime).getMinutes();
     const lateCheckoutEndTime = sessionEndTime + 15; // Assuming a 15-minute grace period after session ends
 
     return (
@@ -340,15 +318,15 @@ async function findSessionForCheckout(studentId, timestamp) {
     return null; // No suitable session found for checkout
   }
 
-  console.log('Session:', session);
-  
+  console.log("Session:", session);
+
   // Ensure the session is still relevant for the checkout process
   const relevantSession = await Timetable.findOne({
     _id: timetable._id,
-    'sessions._id': session._id,
+    "sessions._id": session._id,
   });
 
-  console.log('Timetable Session:', relevantSession);
+  console.log("Timetable Session:", relevantSession);
 
   if (!relevantSession) {
     return null; // Session not found in the timetable
@@ -356,6 +334,110 @@ async function findSessionForCheckout(studentId, timestamp) {
 
   return session; // Return the found session
 }
+
+// Main check-in function
+exports.checkOut = async (req, res) => {
+  // Removed initial request body destructuring for studentId, nfcTagId, and biometricData
+
+  const timestamp = new Date();
+
+  try {
+    // Fetch NFC Tag ID from FastAPI
+    const nfcResponse = await axios.get(
+      `${process.env.FASTAPI_BASE_URL}/read-nfc`
+    );
+    const nfcTagId = nfcResponse.data.tagId;
+
+    let studentId = await validateNFC(nfcTagId);
+
+    // If the NFC Tag ID didn't resolve to a studentId, fetch the biometric data
+    if (!studentId) {
+      const bioResponse = await axios.get(
+        `${process.env.FASTAPI_BASE_URL}/read-fingerprint`
+      );
+      const biometricData = bioResponse.data.template; // Adjust according to your data structure
+
+      studentId = await validateBiometric(biometricData);
+    }
+
+    // If neither method resolves to a studentId, return an error
+    if (!studentId) {
+      return res.status(404).json({
+        message: "Student not found using NFC Tag ID or Biometric Data",
+      });
+    }
+
+    // Assuming the validateNFC and validateBiometric return the ObjectId directly
+
+    const student = await StudentDetails.findById(studentId).populate("user");
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    // Find the current session for check-in
+    const session = await findSessionForCheckIn(student._id, timestamp);
+    if (!session) {
+      return res
+        .status(404)
+        .json({ message: "No session available for check-in at this time." });
+    }
+
+    // Ensure the session is present in the timetable
+    const timetableSession = await Timetable.findOne({
+      _id: session._id, // Assuming session has a unique identifier
+      "sessions.startTime": session.startTime,
+      "sessions.endTime": session.endTime,
+    });
+    // Determine attendance status and record attendance
+    const attendanceStatus = determineAttendanceStatus(
+      session.startTime,
+      timestamp
+    );
+    const date = new Date(timestamp).setHours(0, 0, 0, 0); // Normalize the date
+    const attendanceRecord = await recordAttendance(
+      studentId,
+      session._id,
+      date,
+      attendanceStatus
+    );
+
+    // Access the student's User document to get the email
+    const userEmail = student.user.email; // Since 'user' is populated, we can access 'email' directly
+    const studentName = student.name;
+
+    const sessionDetails = `Session ID: ${session._id}, Session Start Time: ${session.startTime}`;
+    const emailSubject = "Check-in Confirmation";
+    const emailBody = `
+    Hello ${studentName},
+
+    You have successfully checked in for your session. Here are the session details:
+    ${sessionDetails}
+
+    Status: ${attendanceStatus}
+
+    If this was not you, please contact the administration immediately.
+
+    Best regards,
+    The Bionite Team`;
+
+    sendEmail(userEmail, emailSubject, emailBody)
+      .then(() => {
+        console.log("Check-in confirmation email sent successfully.");
+      })
+      .catch((err) => {
+        console.error("Failed to send check-in confirmation email:", err);
+      });
+
+    res.status(200).json({
+      message: "Check-in successful",
+      session: session,
+      attendance: attendanceRecord,
+    });
+  } catch (err) {
+    console.error("Error during check-in:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
 
 function determineCheckoutStatus(sessionEndTime, checkoutTime) {
   // Convert session end time and checkout time to Date objects if they're not already
@@ -381,42 +463,65 @@ function determineCheckoutStatus(sessionEndTime, checkoutTime) {
 
   // Determine checkout status based on time comparison
   if (checkoutTotalMinutes <= lateCheckoutEnd) {
-    return 'Completed'; // Within grace period after session end
+    return "Completed"; // Within grace period after session end
   } else {
-    return 'LeftEarly'; // After the grace period
+    return "LeftEarly"; // After the grace period
   }
 }
 
 // Record checkout in the database
-async function recordCheckout(studentId, sessionId, date, checkoutStatus, nfcTagId, biometricData, checkoutTime) {
+async function recordCheckout(
+  studentId,
+  sessionId,
+  date,
+  checkoutStatus,
+  nfcTagId,
+  biometricData,
+  checkoutTime
+) {
   // Find the attendance record for the given date
-  let attendance = await Attendance.findOne({ studentId: studentId, date: date });
+  let attendance = await Attendance.findOne({
+    studentId: studentId,
+    date: date,
+  });
 
   if (!attendance) {
     // If no attendance record exists for this date, it's a logic error since checkout assumes check-in
-    console.error('No attendance record found for checkout. Student ID:', studentId, 'Date:', date);
-    throw new Error('No attendance record found for this date.');
+    console.error(
+      "No attendance record found for checkout. Student ID:",
+      studentId,
+      "Date:",
+      date
+    );
+    throw new Error("No attendance record found for this date.");
   }
 
   // Check if there is already a checkout for the given session ID
-  const alreadyCheckedOut = attendance.checkOuts.some(checkOut => checkOut.sessionId.equals(sessionId));
-  
+  const alreadyCheckedOut = attendance.checkOuts.some((checkOut) =>
+    checkOut.sessionId.equals(sessionId)
+  );
+
   if (alreadyCheckedOut) {
-    console.log('Student has already checked out from this session. Skipping duplicate checkout.');
+    console.log(
+      "Student has already checked out from this session. Skipping duplicate checkout."
+    );
     // Optionally, you can update the existing checkout here if needed
     return attendance; // Return the existing attendance record without changes
   }
 
   // Calculate class duration in hours
-  const session = await Timetable.findOne({
-    'sessions._id': sessionId
-  }, {
-    sessions: { $elemMatch: { _id: sessionId } }
-  });
+  const session = await Timetable.findOne(
+    {
+      "sessions._id": sessionId,
+    },
+    {
+      sessions: { $elemMatch: { _id: sessionId } },
+    }
+  );
 
   if (!session) {
-    console.error('Session not found for checkout. Session ID:', sessionId);
-    throw new Error('Session not found.');
+    console.error("Session not found for checkout. Session ID:", sessionId);
+    throw new Error("Session not found.");
   }
 
   const sessionStart = new Date(session.sessions[0].startTime);
@@ -438,7 +543,6 @@ async function recordCheckout(studentId, sessionId, date, checkoutStatus, nfcTag
 
   return attendance;
 }
-
 
 // Function to perform periodic checks and update attendance records
 async function performPeriodicCheck() {
@@ -466,7 +570,11 @@ async function performPeriodicCheck() {
         );
 
         // If the student has not checked in, mark them as absent
-        if (!attendanceRecord.checkIns.some(checkIn => checkIn.sessionId.equals(session._id))) {
+        if (
+          !attendanceRecord.checkIns.some((checkIn) =>
+            checkIn.sessionId.equals(session._id)
+          )
+        ) {
           attendanceRecord.absences.push({
             sessionId: session._id,
             time: currentTimestamp,
@@ -478,10 +586,9 @@ async function performPeriodicCheck() {
       }
     }
   } catch (error) {
-    console.error('Error performing periodic check:', error);
+    console.error("Error performing periodic check:", error);
   }
 }
-
 
 // Define the endpoint handler function
 exports.getAttendanceSummary = async (req, res) => {
@@ -489,14 +596,18 @@ exports.getAttendanceSummary = async (req, res) => {
     const { studentId } = req.params;
 
     const currentDate = new Date();
-    const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+    const today = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth(),
+      currentDate.getDate()
+    );
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const attendanceRecord = await Attendance.findOne({
       studentId: studentId,
       date: { $gte: today, $lt: tomorrow },
-      status: 'Present'
+      status: "Present",
     });
 
     console.log("Aggregating for studentId:", studentId);
@@ -506,41 +617,50 @@ exports.getAttendanceSummary = async (req, res) => {
         $match: {
           studentId: new mongoose.Types.ObjectId(studentId), // Ensure matching the studentId
           date: { $gte: today, $lt: tomorrow }, // Match records for the current day only
-          status: 'Present', // Consider only 'Present' status
-        }
+          status: "Present", // Consider only 'Present' status
+        },
       },
-      { $unwind: '$checkOuts' }, // Unwind the checkOuts array to access each object
+      { $unwind: "$checkOuts" }, // Unwind the checkOuts array to access each object
       {
         $group: {
           _id: null,
-          totalHours: { $sum: '$checkOuts.classDurationHours' } // Sum the classDurationHours
-        }
-      }
+          totalHours: { $sum: "$checkOuts.classDurationHours" }, // Sum the classDurationHours
+        },
+      },
     ]);
 
     console.log("Aggregation result:", totalHoursAttended);
 
-    const totalHours = totalHoursAttended.length > 0 ? totalHoursAttended[0].totalHours : 0;
+    const totalHours =
+      totalHoursAttended.length > 0 ? totalHoursAttended[0].totalHours : 0;
 
     const summary = {
       presentToday: !!attendanceRecord, // Determine presence based on the existence of the attendance record
       totalHoursAttended: totalHours,
       // Add more details from attendanceRecord if needed
-      attendanceDetails: attendanceRecord ? {
-        checkInTime: attendanceRecord.checkIns.length > 0 ? attendanceRecord.checkIns[0].time : null,
-        checkOutTime: attendanceRecord.checkOuts.length > 0 ? attendanceRecord.checkOuts[0].time : null,
-        status: attendanceRecord.status
-      } : null
+      attendanceDetails: attendanceRecord
+        ? {
+            checkInTime:
+              attendanceRecord.checkIns.length > 0
+                ? attendanceRecord.checkIns[0].time
+                : null,
+            checkOutTime:
+              attendanceRecord.checkOuts.length > 0
+                ? attendanceRecord.checkOuts[0].time
+                : null,
+            status: attendanceRecord.status,
+          }
+        : null,
     };
 
-    res.json({ status: 'success', data: summary });
+    res.json({ status: "success", data: summary });
   } catch (err) {
-    console.error('Error getting attendance summary:', err);
-    res.status(500).json({ status: 'error', message: 'Server error', error: err.message });
+    console.error("Error getting attendance summary:", err);
+    res
+      .status(500)
+      .json({ status: "error", message: "Server error", error: err.message });
   }
 };
-
-
 
 // Function to get attendance summary
 exports.GetAttendanceSummary = async (req, res) => {
@@ -549,7 +669,7 @@ exports.GetAttendanceSummary = async (req, res) => {
 
     // Validate query parameters
     if (!classId || !startDate || !endDate) {
-      return res.status(400).json({ message: 'Missing required parameters' });
+      return res.status(400).json({ message: "Missing required parameters" });
     }
 
     // Convert startDate and endDate to Date objects
@@ -569,56 +689,58 @@ exports.GetAttendanceSummary = async (req, res) => {
       // Lookup to join with StudentDetails to filter by classId
       {
         $lookup: {
-          from: 'studentdetails',
-          localField: 'studentId',
-          foreignField: '_id',
-          as: 'studentInfo',
+          from: "studentdetails",
+          localField: "studentId",
+          foreignField: "_id",
+          as: "studentInfo",
         },
       },
       // Filter documents after lookup to include only those belonging to the specified classId
       {
         $match: {
-          'studentInfo.classId': mongoose.Types.ObjectId(classId),
+          "studentInfo.classId": mongoose.Types.ObjectId(classId),
         },
       },
       // Group by student ID to aggregate attendance data
       {
         $group: {
-          _id: '$studentId',
+          _id: "$studentId",
           totalClasses: { $sum: 1 },
           presentCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'Present'] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$status", "Present"] }, 1, 0] },
           },
           lateCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'Late'] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$status", "Late"] }, 1, 0] },
           },
           absentCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'Absent'] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$status", "Absent"] }, 1, 0] },
           },
           totalDuration: {
-            $sum: '$classDurationHours', // Assuming you have a field named classDurationHours in the Attendance collection
+            $sum: "$classDurationHours", // Assuming you have a field named classDurationHours in the Attendance collection
           },
         },
       },
       // Optional: Format the output
       {
         $project: {
-          studentId: '$_id',
+          studentId: "$_id",
           totalClasses: 1,
           presentCount: 1,
           lateCount: 1,
           absentCount: 1,
           totalDuration: 1,
-          studentInfo: { $first: '$studentInfo' }, // Adjust based on your data structure
+          studentInfo: { $first: "$studentInfo" }, // Adjust based on your data structure
         },
       },
     ]);
 
     // Send the response
-    res.json({ status: 'success', data: summary });
+    res.json({ status: "success", data: summary });
   } catch (err) {
-    console.error('Error getting attendance summary:', err);
-    res.status(500).json({ status: 'error', message: 'Server error', error: err });
+    console.error("Error getting attendance summary:", err);
+    res
+      .status(500)
+      .json({ status: "error", message: "Server error", error: err });
   }
 };
 
@@ -629,7 +751,9 @@ exports.calculateMonthlyAttendance = async (req, res) => {
 
     // Check if the required parameters are provided
     if (!month || !year || !studentId) {
-      return res.status(400).json({ message: 'Missing required parameters: month, year, and studentId' });
+      return res.status(400).json({
+        message: "Missing required parameters: month, year, and studentId",
+      });
     }
 
     // Parse month and year to integers
@@ -638,7 +762,7 @@ exports.calculateMonthlyAttendance = async (req, res) => {
 
     // Validate month and year
     if (monthInt < 1 || monthInt > 12 || isNaN(monthInt) || isNaN(yearInt)) {
-      return res.status(400).json({ message: 'Invalid month or year' });
+      return res.status(400).json({ message: "Invalid month or year" });
     }
 
     // Calculate the first and last day of the month
@@ -652,20 +776,30 @@ exports.calculateMonthlyAttendance = async (req, res) => {
     });
 
     // Calculate the number of present, late, and absent days
-    const attendanceSummary = attendanceRecords.reduce((acc, record) => {
-      acc[record.status] = (acc[record.status] || 0) + 1;
-      acc.totalDuration += record.classDurationHours || 0;
-      return acc;
-    }, { Present: 0, Late: 0, Absent: 0, totalDuration: 0 });
+    const attendanceSummary = attendanceRecords.reduce(
+      (acc, record) => {
+        acc[record.status] = (acc[record.status] || 0) + 1;
+        acc.totalDuration += record.classDurationHours || 0;
+        return acc;
+      },
+      { Present: 0, Late: 0, Absent: 0, totalDuration: 0 }
+    );
 
     // Calculate the total number of session days in the month
     // This requires a hypothetical function `getSessionDays` that calculates the total session days
     // For the purpose of this example, let's assume it returns a fixed number
     // Please replace this with your actual function to calculate session days
-    const totalSessionDays = await getSessionDays(startDate, endDate, studentId);
+    const totalSessionDays = await getSessionDays(
+      startDate,
+      endDate,
+      studentId
+    );
 
     // Calculate the attendance percentage
-    const attendancePercentage = ((attendanceSummary.Present + attendanceSummary.Late) / totalSessionDays) * 100;
+    const attendancePercentage =
+      ((attendanceSummary.Present + attendanceSummary.Late) /
+        totalSessionDays) *
+      100;
 
     // Respond with the updated attendance data
     res.json({
@@ -681,8 +815,8 @@ exports.calculateMonthlyAttendance = async (req, res) => {
       details: attendanceRecords,
     });
   } catch (err) {
-    console.error('Error calculating monthly attendance:', err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error("Error calculating monthly attendance:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -701,8 +835,8 @@ async function getSessionDays(startDate, endDate, studentId) {
   }).lean();
 
   let sessionDaysSet = new Set();
-  timetables.forEach(timetable => {
-    timetable.sessions.forEach(session => {
+  timetables.forEach((timetable) => {
+    timetable.sessions.forEach((session) => {
       // Example assumes 'day' is stored as 'MON', 'TUE', etc.
       sessionDaysSet.add(session.day.toUpperCase());
     });
@@ -710,7 +844,7 @@ async function getSessionDays(startDate, endDate, studentId) {
 
   // Calculate the total number of unique session days
   let totalSessionDays = 0;
-  sessionDaysSet.forEach(dayOfWeek => {
+  sessionDaysSet.forEach((dayOfWeek) => {
     let currentDate = new Date(startDate);
     while (currentDate <= endDate) {
       if (currentDate.getUTCDay() === convertDayToNumber(dayOfWeek)) {
@@ -724,11 +858,9 @@ async function getSessionDays(startDate, endDate, studentId) {
 }
 
 function convertDayToNumber(day) {
-  const mapping = { "SUN": 0, "MON": 1, "TUE": 2, "WED": 3, "THU": 4, "FRI": 5, "SAT": 6 };
+  const mapping = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6 };
   return mapping[day];
 }
-
-
 
 // Function to calculate semester attendance
 exports.calculateSemesterAttendance = async (req, res) => {
@@ -737,7 +869,7 @@ exports.calculateSemesterAttendance = async (req, res) => {
 
     // Validate query parameters
     if (!studentId || !semesterStartDate || !semesterEndDate) {
-      return res.status(400).json({ message: 'Missing required parameters' });
+      return res.status(400).json({ message: "Missing required parameters" });
     }
 
     // Convert startDate and endDate to Date objects
@@ -759,7 +891,8 @@ exports.calculateSemesterAttendance = async (req, res) => {
     }, 0);
 
     // Calculate the attendance percentage
-    const attendancePercentage = (totalHoursAttended / totalHoursInSemester) * 100;
+    const attendancePercentage =
+      (totalHoursAttended / totalHoursInSemester) * 100;
 
     // Respond with the calculated data
     res.json({
@@ -772,7 +905,7 @@ exports.calculateSemesterAttendance = async (req, res) => {
       details: attendanceRecords,
     });
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -784,29 +917,31 @@ async function getTotalHoursInSemester(startDate, endDate) {
         $elemMatch: {
           startTime: { $gte: startDate },
           endTime: { $lte: endDate },
-        }
-      }
+        },
+      },
     });
 
     // Calculate the total hours by summing the durations of all class sessions
     const totalHoursInSemester = classes.reduce((total, timetable) => {
       // Iterate over the sessions of each timetable and sum the durations
-      const timetableHours = timetable.sessions.reduce((timetableTotal, session) => {
-        const sessionDuration = (session.endTime - session.startTime) / (1000 * 60 * 60); // Duration in hours
-        return timetableTotal + sessionDuration;
-      }, 0);
+      const timetableHours = timetable.sessions.reduce(
+        (timetableTotal, session) => {
+          const sessionDuration =
+            (session.endTime - session.startTime) / (1000 * 60 * 60); // Duration in hours
+          return timetableTotal + sessionDuration;
+        },
+        0
+      );
 
       return total + timetableHours;
     }, 0);
 
     return totalHoursInSemester;
   } catch (error) {
-    console.error('Error calculating total hours:', error);
+    console.error("Error calculating total hours:", error);
     // Handle the error appropriately, e.g., return a default value or throw an error
     throw error;
   }
 }
 
-
-   
 cron.schedule(globalSettings.periodicCheck.interval, performPeriodicCheck);
